@@ -1,0 +1,15 @@
+package com.harding.feeds;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+@SpringBootApplication
+@EnableScheduling
+public class FeedsApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(FeedsApplication.class, args);
+    }
+
+}

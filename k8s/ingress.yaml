@@ -1,0 +1,39 @@
+# Feeds ingress — mirrors meals_cluster/infrastructure/ingress/ingress.yaml
+# (nginx ingress class + cert-manager letsencrypt-prod issuer).
+#
+# HOST IS A PLACEHOLDER: replace feeds.REPLACE-ME with the real host
+# (e.g. feeds.grubplanner.co.uk) in BOTH the tls.hosts list and rules.host.
+# PREREQUISITE (else 404 / cert failure): a DNS A/CNAME record for the chosen
+# host pointing at the cluster ingress, so cert-manager can issue feeds-tls-cert.
+#
+# Only /api/ is routed — feeds has no web client (Android app only).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: feeds
+  namespace: default
+  labels:
+    app.kubernetes.io/name: feeds-ingress
+    app.kubernetes.io/component: ingress
+    app.kubernetes.io/part-of: feeds
+  annotations:
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/issue-temporary-certificate: "true"
+    cert-manager.io/issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - feeds.REPLACE-ME  # PLACEHOLDER host — see header comment
+    secretName: feeds-tls-cert
+  rules:
+  - host: feeds.REPLACE-ME  # PLACEHOLDER host — see header comment
+    http:
+      paths:
+      - path: /api/
+        pathType: Prefix
+        backend:
+          service:
+            name: feeds
+            port:
+              number: 80

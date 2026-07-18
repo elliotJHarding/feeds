@@ -1,0 +1,98 @@
+# Feeds server Deployment — mirrors meals_cluster/apps/meals/deployment.yaml.
+# Deviations from meals (deliberate, see k8s/README.md):
+#   - No Redis env block (feeds has no Redis).
+#   - No GOOGLE_CLIENT_SECRET (feeds verifies Google ID tokens only; the client
+#     id is the token audience and is not sensitive, so it is a plain env value).
+#   - resources block added, sized for a 2-user service (meals defines none).
+#   - securityContext is unprivileged (meals runs privileged/root with no
+#     documented reason; a buildpack Spring Boot image does not need it).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: feeds
+  namespace: default
+  labels:
+    k8s-app: feeds
+    app.kubernetes.io/name: feeds
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: feeds
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: feeds
+  template:
+    metadata:
+      labels:
+        k8s-app: feeds
+      name: feeds
+    spec:
+      containers:
+      - name: feeds
+        # Same tagging convention as meals: :latest + imagePullPolicy Always,
+        # so "deploy" = re-push the image and restart the pod.
+        image: grubplanner.co.uk:32000/feeds:latest
+        imagePullPolicy: Always
+        env:
+        # Database configuration — DB_URL is host:port/db against the Supabase
+        # connection pooler (the jdbc:postgresql:// prefix lives in
+        # application.properties, as in meals). PLACEHOLDER: replace with the
+        # pooler host of the new feeds Supabase project.
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: feeds-database-secret
+              key: username
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: feeds-database-secret
+              key: password
+        - name: DB_URL
+          value: REPLACE-ME.pooler.supabase.com:5432/postgres  # e.g. aws-0-eu-west-2.pooler.supabase.com:5432/postgres
+
+        # Auth configuration — JWT signing secret; Google OAuth client id used
+        # as the expected audience when verifying Google ID tokens.
+        - name: TOKEN_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: feeds-app-secret
+              key: token-secret
+        - name: GOOGLE_CLIENT_ID
+          value: REPLACE-ME.apps.googleusercontent.com  # PLACEHOLDER: web OAuth client id
+        ports:
+        - containerPort: 8080
+        # Probe paths assume the meals convention: servlet context path /api
+        # with Spring Boot actuator health groups enabled.
+        livenessProbe:
+          httpGet:
+            path: api/actuator/health/liveness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: api/actuator/health/readiness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: api/actuator/health/liveness
+            port: 8080
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 30
+        # Scaled for a 2-user service; the JVM still needs headroom to boot.
+        resources:
+          requests:
+            cpu: 100m
+            memory: 384Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          privileged: false
+          allowPrivilegeEscalation: false

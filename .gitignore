@@ -1,0 +1,14 @@
+.gradle/
+build/
+bin/
+out/
+.idea/
+*.iml
+local.properties
+.DS_Store
+/captures
+.externalNativeBuild
+.cxx
+
+# Contains the production DB password - never commit.
+supabase.connection

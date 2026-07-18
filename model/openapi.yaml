@@ -1,0 +1,551 @@
+openapi: 3.0.3
+info:
+  title: Feeds API
+  version: 1.0.0
+  description: API specification for the shared baby feed tracker - Android client and Spring Boot server
+
+servers:
+  - url: http://localhost:8080/api
+    description: Local development (server context path /api)
+
+# Every operation requires a Bearer JWT issued by /auth/login, except the two
+# auth endpoints themselves: /auth/login authenticates with a Google ID token
+# in the body, /auth/refresh authenticates with the refresh token in the body
+# (both sit on the server's public security filter chain, as in meals).
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by /auth/login or /auth/refresh
+
+  schemas:
+    # Enums
+    FeedType:
+      type: string
+      enum:
+        - BREAST
+        - BOTTLE
+      description: Feed type. v1 UI is breast-only; BOTTLE exists to avoid a later migration.
+
+    Side:
+      type: string
+      enum:
+        - L
+        - R
+      description: Breast side. One feed is one side; a mid-session switch is two feeds.
+
+    # Core Domain Models
+    FeedDto:
+      type: object
+      required:
+        - id
+        - babyId
+        - type
+        - startTime
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated UUID. The server stores the client's id verbatim; resending the same id is idempotent, which makes offline sync retries safe.
+        babyId:
+          type: integer
+          format: int64
+        type:
+          $ref: '#/components/schemas/FeedType'
+        side:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Side'
+        amountMl:
+          type: integer
+          format: int32
+          nullable: true
+          description: Bottle feeds only; null for breast feeds
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null while the feed is in progress. Setting it (via update) ends the feed. Duration is always derived client-side from endTime - startTime and is never stored or transferred.
+        createdBy:
+          type: integer
+          format: int64
+          readOnly: true
+          description: Id of the AppUser that created the feed. Display-only; any group member may edit or delete any feed.
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Server-set on every write; drives the updatedSince sync query and last-write-wins conflict resolution.
+
+    BabyDto:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+
+    AppUserDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        pictureUrl:
+          type: string
+          nullable: true
+
+    FamilyGroupDto:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/AppUserDto'
+
+    # Auth Models
+    LoginRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Google ID token obtained from Android Credential Manager sign-in
+
+    LoginResponse:
+      type: object
+      required:
+        - user
+        - accessToken
+        - refreshToken
+      properties:
+        user:
+          $ref: '#/components/schemas/AppUserDto'
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+          format: int64
+          description: Access token validity in seconds
+        tokenType:
+          type: string
+          description: Always "Bearer"
+
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+
+    TokenResponse:
+      type: object
+      required:
+        - accessToken
+        - refreshToken
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+          description: Rotation is enabled - this is a new refresh token and the presented one is revoked
+        expiresIn:
+          type: integer
+          format: int64
+          description: Access token validity in seconds
+        tokenType:
+          type: string
+          description: Always "Bearer"
+
+    # Group Models
+    InviteCodeResponse:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          description: Short human-enterable code the second user types to join the group
+
+    JoinGroupRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+
+paths:
+  # Authentication Endpoints
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+        - Authentication
+      summary: Exchange a Google ID token for app JWTs
+      description: Verifies the Google ID token, upserts the AppUser, and returns access + refresh tokens with the user details
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated - tokens and user details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Google ID token invalid or expired
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags:
+        - Authentication
+      summary: Exchange a refresh token for a new token pair
+      description: Validates the refresh token and returns a new access token plus a rotated refresh token; the presented refresh token is revoked
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Refresh token invalid, expired, or revoked
+
+  # Feed Endpoints
+  /feeds:
+    get:
+      operationId: getFeeds
+      tags:
+        - Feeds
+      summary: Get feeds for a baby
+      description: >
+        Returns feeds ordered by startTime descending, including any in-progress
+        feed (endTime null). History and charts page by date range (from/to).
+        Polling strategy: updatedSince is an optimisation for incremental pulls
+        of creates and updates ONLY - deletes are hard deletes with no
+        tombstone, so a poll filtered by updatedSince alone will never observe
+        a delete. The client's 15s foreground poll must therefore refetch its
+        visible window (e.g. the last 48h) by from/to range, which reconciles
+        deletes by replacing that window's contents.
+      parameters:
+        - name: babyId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: from
+          in: query
+          required: false
+          description: Only feeds with startTime >= from
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Only feeds with startTime < to
+          schema:
+            type: string
+            format: date-time
+        - name: updatedSince
+          in: query
+          required: false
+          description: >
+            Only feeds with updatedAt > updatedSince. Combines with from/to if
+            both are given. Optimisation for incremental pulls of creates and
+            updates only - deletes are hard deletes with no tombstone and are
+            invisible to this filter; reconcile deletes by refetching the
+            visible window with from/to (see operation description).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of feeds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FeedDto'
+
+    post:
+      operationId: createFeed
+      tags:
+        - Feeds
+      summary: Create a feed
+      description: >
+        Creates a feed with the client-generated id from the request body.
+        Creating with endTime null starts an in-progress feed. Idempotent by
+        id - if a feed with this id already exists in the caller's group the
+        request succeeds and returns the existing feed unchanged (200), so
+        offline sync retries are safe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedDto'
+      responses:
+        '201':
+          description: Created feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedDto'
+        '200':
+          description: Feed with this id already exists (idempotent replay) - returned unchanged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedDto'
+
+  /feeds/{id}:
+    put:
+      operationId: updateFeed
+      tags:
+        - Feeds
+      summary: Update a feed
+      description: >
+        Full replacement of the feed's editable fields. Setting endTime on an
+        in-progress feed ends it. Concurrent edits resolve last-arrival-wins
+        (updatedAt is server-set). Acceptable for the two-user, append-mostly
+        workload. Any group member may update any feed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedDto'
+      responses:
+        '200':
+          description: Updated feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedDto'
+        '404':
+          description: Feed not found
+
+    delete:
+      operationId: deleteFeed
+      tags:
+        - Feeds
+      summary: Delete a feed
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Feed deleted
+        '404':
+          description: Feed not found
+
+  # Baby Endpoints
+  /babies:
+    get:
+      operationId: getBabies
+      tags:
+        - Babies
+      summary: Get the group's babies
+      description: Returns all babies in the caller's group. v1 UI uses the first entry; the array shape means twins or a second child need no contract change.
+      responses:
+        '200':
+          description: List of babies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BabyDto'
+
+    post:
+      operationId: createBaby
+      tags:
+        - Babies
+      summary: Create a baby in the caller's group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BabyDto'
+      responses:
+        '200':
+          description: Created baby
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BabyDto'
+
+  /babies/{id}:
+    put:
+      operationId: updateBaby
+      tags:
+        - Babies
+      summary: Update a baby
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BabyDto'
+      responses:
+        '200':
+          description: Updated baby
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BabyDto'
+        '404':
+          description: Baby not found
+
+  # FamilyGroup Endpoints
+  /familyGroup:
+    get:
+      operationId: getFamilyGroup
+      tags:
+        - FamilyGroup
+      summary: Get the caller's family group with its members
+      responses:
+        '200':
+          description: The caller's family group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyGroupDto'
+        '404':
+          description: Caller is not in a family group yet
+
+    post:
+      operationId: createFamilyGroup
+      tags:
+        - FamilyGroup
+      summary: Create a family group with the caller as first member
+      responses:
+        '200':
+          description: Created family group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyGroupDto'
+
+  /familyGroup/inviteCode:
+    get:
+      operationId: getInviteCode
+      tags:
+        - FamilyGroup
+      summary: Get the caller's group current invite code
+      description: >-
+        Returns the group's active invite code, generating one on first request if the group
+        has none yet. Stable across calls - the code only changes when explicitly regenerated.
+      responses:
+        '200':
+          description: Invite code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCodeResponse'
+        '404':
+          description: Caller is not in a family group
+
+    post:
+      operationId: regenerateInviteCode
+      tags:
+        - FamilyGroup
+      summary: Regenerate the caller's group invite code
+      description: Mints a new code and invalidates the previous one. The second user enters the code after signing in to join the group.
+      responses:
+        '200':
+          description: Invite code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCodeResponse'
+        '404':
+          description: Caller is not in a family group
+
+  /familyGroup/join:
+    post:
+      operationId: joinFamilyGroup
+      tags:
+        - FamilyGroup
+      summary: Join a family group by invite code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '200':
+          description: Joined family group
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyGroupDto'
+        '404':
+          description: Invite code invalid or expired

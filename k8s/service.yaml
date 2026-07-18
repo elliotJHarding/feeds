@@ -1,0 +1,19 @@
+# Feeds server Service — mirrors meals_cluster/apps/meals/service.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: feeds
+  namespace: default
+  labels:
+    k8s-app: feeds
+    app.kubernetes.io/name: feeds
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: feeds
+spec:
+  type: ClusterIP
+  selector:
+    k8s-app: feeds
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8080

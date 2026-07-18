@@ -1,0 +1,80 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.4.13'
+    id 'io.spring.dependency-management' version '1.1.3'
+    id 'org.openapi.generator' version '7.2.0'
+}
+
+group = 'com.harding'
+version = '0.1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+    google()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Google ID token verification (GoogleIdTokenVerifier) - the only Google dependency
+    // needed for sign-in; the meals offline-access machinery is deliberately not ported.
+    implementation 'com.google.api-client:google-api-client:1.33.0'
+
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'com.h2database:h2'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.security:spring-security-test'
+}
+
+// Contract-first: API interfaces and DTOs are generated from the monorepo contract.
+// Controllers implement the generated interfaces; skipDefaultInterface makes a missing
+// method a compile error rather than a runtime 501.
+openApiGenerate {
+    generatorName = "spring"
+    inputSpec = "$rootDir/../model/openapi.yaml"
+    outputDir = layout.buildDirectory.dir("generated/openapi").get().asFile.path
+    apiPackage = "com.harding.feeds.api"
+    modelPackage = "com.harding.feeds.dto"
+    configOptions = [
+        useSpringBoot3          : "true",
+        useJakartaEe            : "true",
+        interfaceOnly           : "true",
+        skipDefaultInterface    : "true",
+        useTags                 : "true",
+        dateLibrary             : "java8",
+        documentationProvider   : "none",
+        openApiNullable         : "false",
+        hideGenerationTimestamp : "true"
+    ]
+}
+
+sourceSets.main.java.srcDir layout.buildDirectory.dir("generated/openapi/src/main/java")
+compileJava.dependsOn tasks.openApiGenerate
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.named("bootBuildImage") {
+    imageName = "grubplanner.co.uk:32000/feeds:latest"
+    publish = true
+    docker {
+        publishRegistry {
+            url = "grubplanner.co.uk:32000"
+            username = System.getenv("REGISTRY_USER")
+            password = System.getenv("REGISTRY_PASSWORD")
+        }
+    }
+}
