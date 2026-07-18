@@ -92,13 +92,16 @@ spec:
           timeoutSeconds: 1
           failureThreshold: 30
         # Scaled for a 2-user service; the JVM still needs headroom to boot.
+        # The Paketo memory calculator needs ~650Mi of fixed regions (250 thread
+        # stacks + 240Mi code cache + ~138Mi metaspace) before heap, so 512Mi is
+        # too small for the JVM to launch. 1Gi leaves comfortable heap headroom.
         resources:
           requests:
             cpu: 100m
-            memory: 384Mi
+            memory: 512Mi
           limits:
             cpu: 500m
-            memory: 512Mi
+            memory: 1Gi
         securityContext:
           privileged: false
           allowPrivilegeEscalation: false
