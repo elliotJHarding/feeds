@@ -24,10 +24,10 @@ spec:
   ingressClassName: nginx
   tls:
   - hosts:
-    - feeds.REPLACE-ME  # PLACEHOLDER host — see header comment
+    - feeds.grubplanner.co.uk
     secretName: feeds-tls-cert
   rules:
-  - host: feeds.REPLACE-ME  # PLACEHOLDER host — see header comment
+  - host: feeds.grubplanner.co.uk
     http:
       paths:
       - path: /api/
