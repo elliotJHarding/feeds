@@ -6,36 +6,49 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * Dark-only theme: the app's defining use case is one-thumb entry at 3am (SPEC: "dark theme
- * default"), so v1 ships a single dark palette instead of a light variant.
+ * Candlelight on warm ink. The app's one job is one-thumb entry at 3am, so the palette is
+ * warm (amber/candle) rather than the cool blue it began as: warm light preserves night
+ * vision and disturbs melatonin far less than the ~460nm blue that Night Shift / f.lux exist
+ * to remove. Deliberately dark-only (SPEC: "dark theme default") - a nocturnal product commits
+ * to one visual world rather than shipping a half-considered light variant.
+ *
+ * `primary` is the candle amber used for chrome and the default action; the two feed sides get
+ * their own hues in [com.harding.feeds.ui.sideColor] (moonlight L / amber R) so a glance tells
+ * you the side.
  */
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFF9CC7FF),
-    onPrimary = Color(0xFF06304F),
-    primaryContainer = Color(0xFF174A73),
-    onPrimaryContainer = Color(0xFFD0E4FF),
-    secondary = Color(0xFFB9C8DA),
-    onSecondary = Color(0xFF243240),
-    secondaryContainer = Color(0xFF3A4857),
-    onSecondaryContainer = Color(0xFFD5E4F7),
-    background = Color(0xFF0E1215),
-    onBackground = Color(0xFFE0E3E8),
-    surface = Color(0xFF0E1215),
-    onSurface = Color(0xFFE0E3E8),
-    surfaceVariant = Color(0xFF1C2329),
-    onSurfaceVariant = Color(0xFF9AA4AE),
-    surfaceContainerLow = Color(0xFF151B20),
-    surfaceContainer = Color(0xFF181F25),
-    surfaceContainerHigh = Color(0xFF1D252C),
-    outline = Color(0xFF3A444D),
-    outlineVariant = Color(0xFF29323A),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
+    primary = Color(0xFFE6A45C),            // candle amber
+    onPrimary = Color(0xFF2A1B0C),
+    primaryContainer = Color(0xFF47372A),
+    onPrimaryContainer = Color(0xFFF2C892),
+    secondary = Color(0xFF82AED2),          // moonlight
+    onSecondary = Color(0xFF10222F),
+    secondaryContainer = Color(0xFF2C3A47),
+    onSecondaryContainer = Color(0xFFCBE1F5),
+    background = Color(0xFF14100E),          // warm near-black ink
+    onBackground = Color(0xFFF3E9DD),
+    surface = Color(0xFF14100E),
+    onSurface = Color(0xFFF3E9DD),
+    surfaceVariant = Color(0xFF251D18),      // raised card
+    onSurfaceVariant = Color(0xFFA89384),    // warm grey
+    surfaceContainerLowest = Color(0xFF100C0A),
+    surfaceContainerLow = Color(0xFF1C1613),
+    surfaceContainer = Color(0xFF211A16),
+    surfaceContainerHigh = Color(0xFF2A211B),
+    surfaceContainerHighest = Color(0xFF302620),
+    outline = Color(0xFF3A2E26),             // warm hairline
+    outlineVariant = Color(0xFF2A211B),
+    error = Color(0xFFCF7367),               // ember - the finish/stop state
+    onError = Color(0xFF1B0F0D),
+    errorContainer = Color(0xFF47302C),
+    onErrorContainer = Color(0xFFF3C7BF),
 )
 
 @Composable
 fun FeedsTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = DarkColors, content = content)
+    MaterialTheme(
+        colorScheme = DarkColors,
+        typography = AppTypography,
+        content = content,
+    )
 }

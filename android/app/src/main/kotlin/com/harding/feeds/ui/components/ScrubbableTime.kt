@@ -97,7 +97,7 @@ fun ScrubbableTime(
 }
 
 @Composable
-private fun TypeTimeDialog(
+internal fun TypeTimeDialog(
     initialText: String,
     onDismiss: () -> Unit,
     onConfirm: (java.time.LocalTime) -> Unit,

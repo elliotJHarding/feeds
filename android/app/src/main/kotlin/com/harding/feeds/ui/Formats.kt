@@ -48,14 +48,14 @@ fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
 val Side.label: String get() = value
 
 /**
- * A fixed colour per side so L/R read at a glance without parsing the letter. Left = blue,
- * right = amber; both hold enough contrast on the dark and light themes. [onSideColor] is the
- * text/icon colour to place on top of [sideColor].
+ * A fixed colour per side so L/R read at a glance without parsing the letter. Left = moonlight,
+ * right = candle amber; both are warm-friendly and hold contrast on the warm-ink ground.
+ * [onSideColor] is the text/icon colour to place on top of [sideColor].
  */
-val Side.sideColor: Color get() = if (this == Side.l) Color(0xFF4FA6E8) else Color(0xFFE8913C)
+val Side.sideColor: Color get() = if (this == Side.l) Color(0xFF82AED2) else Color(0xFFE6A45C)
 
-/** Dark foreground - both side colours are light enough that near-black reads cleanly on them. */
-val onSideColor: Color get() = Color(0xFF1A1A1A)
+/** Warm-dark foreground - both side colours are light enough that near-black reads cleanly. */
+val onSideColor: Color get() = Color(0xFF17110C)
 
 /** Accepts "14:32", "1432", "9:05", "905". */
 fun parseTypedTime(text: String): LocalTime? {

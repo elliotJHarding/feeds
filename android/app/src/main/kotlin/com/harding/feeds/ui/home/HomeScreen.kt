@@ -2,6 +2,8 @@ package com.harding.feeds.ui.home
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,17 +15,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,8 +36,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -63,7 +73,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     var showInvite by remember { mutableStateOf(false) }
 
     BottomSheetScaffold(
-        sheetPeekHeight = 96.dp,
+        sheetPeekHeight = PeekHeight,
         sheetContent = {
             HistoryList(
                 days = history,
@@ -83,13 +93,13 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
                 onSelectSide = vm::selectSide,
                 onAdjustActiveStart = vm::adjustActiveStart,
             )
-            HomeActions(
+            TopBar(
                 onOpenCharts = onOpenCharts,
                 onInvite = {
                     showInvite = true
                     vm.loadInviteCode()
                 },
-                modifier = Modifier.align(Alignment.TopEnd),
+                modifier = Modifier.align(Alignment.TopCenter),
             )
         }
     }
@@ -118,25 +128,94 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     }
 }
 
+/** Brand on the left, actions on the right - a real top bar, floating over the entry surface. */
 @Composable
-private fun HomeActions(onOpenCharts: () -> Unit, onInvite: () -> Unit, modifier: Modifier = Modifier) {
+private fun TopBar(onOpenCharts: () -> Unit, onInvite: () -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier
+            .fillMaxWidth()
             // Clear the status bar / display cutout - the app draws edge-to-edge on API 35+.
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onOpenCharts) { Text("Charts") }
-        IconButton(onClick = onInvite) {
-            Icon(
-                Icons.Filled.Share,
-                contentDescription = "Invite partner",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        Text(
+            "Feeds",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ActionIcon(onClick = onOpenCharts, description = "Charts") { ChartGlyph(it) }
+            ActionIcon(onClick = onInvite, description = "Invite partner") { InviteGlyph(it) }
+        }
+    }
+}
+
+/** A bordered circular icon button matching the warm surface treatment. */
+@Composable
+private fun ActionIcon(
+    onClick: () -> Unit,
+    description: String,
+    glyph: @Composable (Color) -> Unit,
+) {
+    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        modifier = Modifier.size(44.dp),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(Modifier.semantics { contentDescription = description }) { glyph(tint) }
+        }
+    }
+}
+
+/** Three rising bars - trends/charts, drawn to match the mockup rather than a stock glyph. */
+@Composable
+private fun ChartGlyph(color: Color) {
+    Canvas(Modifier.size(20.dp)) {
+        val barW = size.width * 0.2f
+        val gap = (size.width - 3 * barW) / 2f
+        val r = CornerRadius(barW / 2f, barW / 2f)
+        listOf(0.45f, 0.9f, 0.65f).forEachIndexed { i, frac ->
+            val h = size.height * frac
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(i * (barW + gap), size.height - h),
+                size = Size(barW, h),
+                cornerRadius = r,
             )
         }
     }
 }
+
+/** A person with a plus - invite a partner. */
+@Composable
+private fun InviteGlyph(color: Color) {
+    Canvas(Modifier.size(20.dp)) {
+        val w = size.width
+        val h = size.height
+        val sw = h * 0.11f
+        val stroke = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        drawCircle(color, radius = h * 0.16f, center = Offset(w * 0.36f, h * 0.26f), style = stroke)
+        drawArc(
+            color = color,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = false,
+            topLeft = Offset(w * 0.1f, h * 0.46f),
+            size = Size(w * 0.52f, h * 0.62f),
+            style = stroke,
+        )
+        drawLine(color, Offset(w * 0.83f, h * 0.28f), Offset(w * 0.83f, h * 0.56f), sw, StrokeCap.Round)
+        drawLine(color, Offset(w * 0.69f, h * 0.42f), Offset(w * 0.97f, h * 0.42f), sw, StrokeCap.Round)
+    }
+}
+
+private val PeekHeight = 160.dp
 
 @Composable
 private fun InviteDialog(

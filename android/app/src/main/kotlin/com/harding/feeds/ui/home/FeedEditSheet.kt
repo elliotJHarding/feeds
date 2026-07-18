@@ -1,6 +1,5 @@
 package com.harding.feeds.ui.home
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -63,12 +62,7 @@ fun FeedEditSheet(
             Text("Edit feed", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(20.dp))
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                SideToggle(selected = side, onSelect = { side = it }, optionSize = 48.dp)
-            }
+            SideToggle(selected = side, onSelect = { side = it })
             Spacer(Modifier.height(20.dp))
 
             DateTimeRow(
