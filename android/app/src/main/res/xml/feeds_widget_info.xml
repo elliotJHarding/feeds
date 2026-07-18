@@ -2,10 +2,10 @@
 <!-- updatePeriodMillis=0: updates are driven by feed-write hooks and WidgetRefreshWorker,
      not the AppWidget host's own alarm. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="110dp"
-    android:targetCellWidth="3"
-    android:targetCellHeight="2"
+    android:minWidth="110dp"
+    android:minHeight="50dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"

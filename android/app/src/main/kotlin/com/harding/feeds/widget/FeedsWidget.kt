@@ -2,9 +2,9 @@ package com.harding.feeds.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.glance.Button
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -19,28 +19,33 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
+import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import com.harding.feeds.FeedsApplication
 import com.harding.feeds.MainActivity
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.ui.formatHoursMinutes
 import com.harding.feeds.ui.label
+import com.harding.feeds.ui.sideColor
 import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.flow.first
 
 /**
- * Home-screen quick entry. Renders a snapshot read straight from Room (works offline, no
- * app launch); freshness comes from [QuickEntryNotifier] after every feed write and from
- * [WidgetRefreshWorker] periodically, so the "since last" and elapsed texts are as fresh
- * as the last update, not ticking.
+ * Home-screen quick entry, sized to a single 2x1 cell: one glance-value plus one action. Renders
+ * a snapshot read straight from Room (works offline, no app launch); freshness comes from
+ * [QuickEntryNotifier] after every feed write and from [WidgetRefreshWorker] periodically, so the
+ * "since last" and elapsed texts are as fresh as the last update, not ticking. Tapping the value
+ * opens the app; tapping the chip starts/stops via the shared use case.
  */
 class FeedsWidget : GlanceAppWidget() {
 
@@ -75,7 +80,7 @@ private sealed interface WidgetState {
     data class Feeding(val side: Side?, val elapsed: Duration) : WidgetState
 }
 
-/** One tap on the button starts/stops via the same use-case as the in-app button. */
+/** One tap on the chip starts/stops via the same use-case as the in-app button. */
 class ToggleFeedAction : ActionCallback {
 
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
@@ -89,55 +94,83 @@ class ToggleFeedAction : ActionCallback {
 
 @Composable
 private fun WidgetContent(state: WidgetState) {
-    Column(
+    Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(GlanceTheme.colors.widgetBackground)
-            .cornerRadius(24.dp)
-            .padding(12.dp)
-            .clickable(actionStartActivity<MainActivity>()),
+            .background(Ink)
+            .cornerRadius(22.dp)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
         when (state) {
-            is WidgetState.NotSetUp -> Header("Open Feeds to set up")
+            is WidgetState.NotSetUp ->
+                Info(
+                    label = "FEEDS",
+                    value = "Open to set up",
+                    modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
+                )
 
             is WidgetState.Idle -> {
-                Header(sinceLastText(state.lastEnded))
-                Spacer(GlanceModifier.height(8.dp))
-                Button(
-                    text = "Start ${state.nextSide.label}",
-                    onClick = actionRunCallback<ToggleFeedAction>(),
+                Info(
+                    label = "SINCE LAST",
+                    value = sinceLastText(state.lastEnded),
+                    modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
+                Spacer(GlanceModifier.width(10.dp))
+                ActionChip("Start ${state.nextSide.label}", state.nextSide.sideColor)
             }
 
             is WidgetState.Feeding -> {
                 val side = state.side?.let { "${it.label} · " } ?: ""
-                Header("Feeding $side${formatHoursMinutes(state.elapsed)}")
-                Spacer(GlanceModifier.height(8.dp))
-                Button(
-                    text = "Stop",
-                    onClick = actionRunCallback<ToggleFeedAction>(),
+                Info(
+                    label = "FEEDING",
+                    value = "$side${formatHoursMinutes(state.elapsed)}",
+                    modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
+                Spacer(GlanceModifier.width(10.dp))
+                ActionChip("Stop", Ember)
             }
         }
     }
 }
 
+/** The glance value on the left: a quiet label over a bold reading; taps open the app. */
 @Composable
-private fun Header(text: String) {
+private fun Info(label: String, value: String, modifier: GlanceModifier = GlanceModifier) {
+    Column(modifier = modifier) {
+        Text(label, style = TextStyle(color = Dim, fontSize = 10.sp, fontWeight = FontWeight.Medium))
+        Spacer(GlanceModifier.height(2.dp))
+        Text(
+            value,
+            maxLines = 1,
+            style = TextStyle(color = TextHi, fontSize = 17.sp, fontWeight = FontWeight.Bold),
+        )
+    }
+}
+
+/** The one action, tinted the colour it drives - the side to start, or ember to stop. */
+@Composable
+private fun ActionChip(text: String, color: Color) {
     Text(
         text = text,
-        style = TextStyle(
-            color = GlanceTheme.colors.onSurface,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-        ),
+        maxLines = 1,
+        style = TextStyle(color = OnAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+        modifier = GlanceModifier
+            .background(ColorProvider(color))
+            .cornerRadius(16.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .clickable(actionRunCallback<ToggleFeedAction>()),
     )
 }
 
+private val Ink = ColorProvider(Color(0xFF1A1410))
+private val TextHi = ColorProvider(Color(0xFFF3E9DD))
+private val Dim = ColorProvider(Color(0xFFA89384))
+private val OnAccent = ColorProvider(Color(0xFF17110C))
+private val Ember = Color(0xFFCF7367)
+
 private fun sinceLastText(lastEnded: FeedEntity?): String {
     val end = lastEnded?.endTime ?: return "No feeds yet"
-    val side = lastEnded.side?.let { " (${it.label})" } ?: ""
-    return "${formatHoursMinutes(Duration.between(end, Instant.now()))} since last$side"
+    val side = lastEnded.side?.let { " ${it.label}" } ?: ""
+    return "${formatHoursMinutes(Duration.between(end, Instant.now()))}$side"
 }
