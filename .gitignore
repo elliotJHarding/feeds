@@ -12,3 +12,10 @@ local.properties
 
 # Contains the production DB password - never commit.
 supabase.connection
+
+# Cluster admin credentials and any filled-in k8s secret - never commit.
+kubeconfig
+*.kubeconfig
+feeds-secrets.yaml
+# JWT signing key backup - never commit (losing it forces a global re-login).
+feeds-jwt*.pem

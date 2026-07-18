@@ -20,8 +20,10 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/your-username/feeds.git  # PLACEHOLDER — set to this repo's real remote
-    targetRevision: HEAD
+    repoURL: https://github.com/elliotjharding/feeds.git
+    # Tracks the deploy branch while the redesign session owns main; merge to
+    # main and switch this back to HEAD once the redesign lands.
+    targetRevision: deploy-server
     path: k8s
     directory:
       recurse: false

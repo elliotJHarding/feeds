@@ -69,6 +69,9 @@ tasks.named('test') {
 
 tasks.named("bootBuildImage") {
     imageName = "grubplanner.co.uk:32000/feeds:latest"
+    // Cluster nodes are amd64; pin the platform so a build on an arm64 dev
+    // machine still produces a runnable image (no-op when built natively on amd64).
+    imagePlatform = "linux/amd64"
     publish = true
     docker {
         publishRegistry {

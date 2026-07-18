@@ -34,11 +34,13 @@ spec:
         image: grubplanner.co.uk:32000/feeds:latest
         imagePullPolicy: Always
         env:
-        # Database configuration — DB_URL is host:port/db against the Supabase
-        # connection pooler (the jdbc:postgresql:// prefix lives in
-        # application.properties, as in meals). PLACEHOLDER: replace with the
-        # pooler host of the new feeds Supabase project.
-        - name: DB_USER
+        # Database configuration — DB_URL is host:port/db (the jdbc:postgresql://
+        # prefix lives in application.properties, as in meals). All three come
+        # from the secret so the Supabase host isn't exposed in this public repo.
+        # Direct connection to the existing feeds Supabase project; if cluster
+        # egress can't reach the direct :5432 endpoint, switch DB_URL to the
+        # Supavisor pooler (session mode) in the secret.
+        - name: DB_USERNAME
           valueFrom:
             secretKeyRef:
               name: feeds-database-secret
@@ -49,50 +51,57 @@ spec:
               name: feeds-database-secret
               key: password
         - name: DB_URL
-          value: REPLACE-ME.pooler.supabase.com:5432/postgres  # e.g. aws-0-eu-west-2.pooler.supabase.com:5432/postgres
+          valueFrom:
+            secretKeyRef:
+              name: feeds-database-secret
+              key: url
 
-        # Auth configuration — JWT signing secret; Google OAuth client id used
-        # as the expected audience when verifying Google ID tokens.
-        - name: TOKEN_SECRET
+        # Auth configuration — the RSA private key the server signs its JWTs with
+        # (persisted so restarts don't invalidate everyone's tokens); Google OAuth
+        # client id used as the expected audience when verifying Google ID tokens.
+        - name: JWT_PRIVATE_KEY
           valueFrom:
             secretKeyRef:
               name: feeds-app-secret
-              key: token-secret
+              key: private-key
         - name: GOOGLE_CLIENT_ID
-          value: REPLACE-ME.apps.googleusercontent.com  # PLACEHOLDER: web OAuth client id
+          value: 1048273244377-i463uucinv6ntl14s871l79uq1g463q3.apps.googleusercontent.com
         ports:
         - containerPort: 8080
         # Probe paths assume the meals convention: servlet context path /api
         # with Spring Boot actuator health groups enabled.
         livenessProbe:
           httpGet:
-            path: api/actuator/health/liveness
+            path: /api/actuator/health/liveness
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 1
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: api/actuator/health/readiness
+            path: /api/actuator/health/readiness
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 1
           failureThreshold: 3
         startupProbe:
           httpGet:
-            path: api/actuator/health/liveness
+            path: /api/actuator/health/liveness
             port: 8080
           periodSeconds: 10
           timeoutSeconds: 1
           failureThreshold: 30
         # Scaled for a 2-user service; the JVM still needs headroom to boot.
+        # The Paketo memory calculator needs ~650Mi of fixed regions (250 thread
+        # stacks + 240Mi code cache + ~138Mi metaspace) before heap, so 512Mi is
+        # too small for the JVM to launch. 1Gi leaves comfortable heap headroom.
         resources:
           requests:
             cpu: 100m
-            memory: 384Mi
+            memory: 512Mi
           limits:
             cpu: 500m
-            memory: 512Mi
+            memory: 1Gi
         securityContext:
           privileged: false
           allowPrivilegeEscalation: false
