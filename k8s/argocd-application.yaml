@@ -21,9 +21,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/elliotjharding/feeds.git
-    # Tracks the deploy branch while the redesign session owns main; merge to
-    # main and switch this back to HEAD once the redesign lands.
-    targetRevision: deploy-server
+    targetRevision: main
     path: k8s
     directory:
       recurse: false
