@@ -25,6 +25,9 @@ spec:
     path: k8s
     directory:
       recurse: false
+      # Don't let the app manage its own Application manifest (it lives in k8s/);
+      # self-management can never reconcile (argocd ns vs default destination).
+      exclude: 'argocd-application.yaml'
   destination:
     server: https://kubernetes.default.svc
     namespace: default
