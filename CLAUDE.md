@@ -88,17 +88,58 @@ Compose, Room (via KSP), WorkManager, Glance (home-screen widget), and Credentia
 for Google sign-in.
 
 Build config comes from `android/gradle.properties`:
-- `feeds.apiBaseUrl` → `BuildConfig.API_BASE_URL` (default `http://10.0.2.2:8080/api/`,
-  which reaches the host machine from the emulator).
-- `feeds.googleWebClientId` → `BuildConfig.GOOGLE_WEB_CLIENT_ID`.
+- `feeds.apiBaseUrl` → `BuildConfig.API_BASE_URL` for the **debug** build (`10.0.2.2:8080` reaches
+  the host from the emulator; a physical device needs the Mac's LAN IP). The **release** build
+  overrides this to `https://feeds.grubplanner.co.uk/api/` in `build.gradle.kts`.
+- `feeds.googleWebClientId` → `BuildConfig.GOOGLE_WEB_CLIENT_ID` (the shared Google **Web** client
+  id, used as the sign-in `serverClientId` and the server's token audience — both builds).
 
-## Deployment
+## Local development & on-device testing
 
-Image built with `bootBuildImage` and pushed to the self-hosted registry
-`grubplanner.co.uk:32000`, deployed to the existing microk8s cluster via ArgoCD. Full
-playbook and placeholders-to-fill are in `k8s/README.md`. Deploy loop:
-`./gradlew bootBuildImage` (needs `REGISTRY_USER`/`REGISTRY_PASSWORD`, publishes on build) then
-`kubectl rollout restart deployment/feeds`.
+Debug and release install **side by side on one device** — debug has a distinct applicationId
+(`applicationIdSuffix ".debug"` → `com.harding.feeds.debug`, label "Feeds (dev)", `versionName`
+suffix `-debug`) and its own debug signing key. This is the best-practice setup for real-device UX
+testing (emulator misses the true feel). Never install a debug APK over the release one under the
+same id — the signing-cert clash gives a misleading "App not installed"
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`); the distinct id avoids it.
+
+Google sign-in is gated on `(package + signing-cert SHA-1)` registered as **Android OAuth clients**
+in GCP project `feeds-502719` (Android clients carry no secret; the Web client id is the shared
+`serverClientId`/audience). Two clients are needed:
+- `com.harding.feeds` + release SHA-1 `23:B4:D9:EB:B1:4D:1B:8C:05:45:FD:A8:7D:1C:4B:E0:4D:E4:30:38`
+- `com.harding.feeds.debug` + debug SHA-1 `74:3F:E3:85:F7:48:FD:10:0A:6B:F9:78:2F:05:45:DE:A5:BB:3C:86`
+  (debug keystore `~/.android/debug.keystore`, alias `androiddebugkey`, storepass `android`)
+
+Dev loop:
+1. `SPRING_PROFILES_ACTIVE=localdev ./gradlew bootRun` from `server/` (in-memory H2 — keeps dev off
+   the prod Supabase feed history).
+2. Set `feeds.apiBaseUrl` in `android/gradle.properties` to reach it (`10.0.2.2:8080` emulator; Mac
+   LAN IP for a physical device — the LAN IP drifts, so re-check it; test reachability from the
+   phone, not the Mac, which can't curl its own LAN IP).
+3. `./gradlew installDebug` (or Android Studio Run). The release build stays untouched.
+
+Release signing keystore: `~/keystores/feeds/feeds-release.jks` (creds in `~/.gradle/gradle.properties`
+as `FEEDS_RELEASE_*`); back it up offline — losing it means the app can never be updated.
+
+## Deployment (server) & release (app)
+
+Both build in **GitHub Actions**, not locally — a local Apple-Silicon build makes an arm64 image
+the amd64 cluster can't run (`exec format error`), and release signing lives in CI secrets. The repo
+is `elliotjharding/feeds` (public); git ops use the personal account via the `github-personal` SSH
+alias (the machine's default `git@github.com` is a work account). `main` is the trunk.
+
+- **Server**: push to `main` → `.github/workflows/build-image.yml` runs `bootBuildImage` on an amd64
+  runner and pushes `grubplanner.co.uk:32000/feeds:latest`. ArgoCD (Application `feeds`, tracks
+  `main`) syncs `k8s/`. To roll a new image: `kubectl rollout restart deployment/feeds -n default`
+  using the cluster kubeconfig at repo root `./kubeconfig` (gitignored; API on `:16443`).
+- **App release**: bump `versionName`/`versionCode`, then `git tag vX && git push origin vX` →
+  `.github/workflows/release-apk.yml` builds+signs the APK and publishes it to GitHub Releases.
+  Stable install link: `https://github.com/elliotjharding/feeds/releases/latest/download/feeds.apk`.
+
+DB is the Supabase project `blxmbbclztmspsazezog`, reached via the **session pooler**
+(`aws-0-eu-central-1.pooler.supabase.com:5432`, user `postgres.blxmbbclztmspsazezog`) — the direct
+`db.*.supabase.co` host is IPv6-only and unreachable from the cluster. Registry TLS, secrets, and
+the fuller playbook are in `k8s/README.md`.
 
 ## Working conventions
 

@@ -21,6 +21,9 @@ android {
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${property("feeds.googleWebClientId")}\"")
         buildConfigField("String", "API_BASE_URL", "\"${property("feeds.apiBaseUrl")}\"")
+
+        // Launcher label; debug overrides it so the two builds are distinguishable.
+        manifestPlaceholders["appLabel"] = "Feeds"
     }
 
     signingConfigs {
@@ -41,6 +44,15 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Distinct applicationId so the debug build installs alongside the
+            // release build on the same device (best practice for on-device dev;
+            // release stays com.harding.feeds). Debug keeps the LAN/emulator
+            // API_BASE_URL from defaultConfig and its own debug signing key.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "Feeds (dev)"
+        }
         getByName("release") {
             // Fall back to debug signing when release creds aren't present, so the
             // build never silently emits an unsigned APK on a machine without them.

@@ -6,7 +6,7 @@
 
     <application
         android:name=".FeedsApplication"
-        android:label="Feeds"
+        android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false"
@@ -23,7 +23,7 @@
 
         <receiver
             android:name=".widget.FeedsWidgetReceiver"
-            android:label="Feeds"
+            android:label="${appLabel}"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
