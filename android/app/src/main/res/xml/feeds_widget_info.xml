@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- updatePeriodMillis=0: updates are driven by feed-write hooks and WidgetRefreshWorker,
-     not the AppWidget host's own alarm. -->
+<!-- updatePeriodMillis=0: updates are driven by feed-write hooks and post-sync refresh,
+     not the AppWidget host's own alarm. The glance-value is an absolute clock time, so it
+     never goes stale between renders. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
     android:minHeight="50dp"

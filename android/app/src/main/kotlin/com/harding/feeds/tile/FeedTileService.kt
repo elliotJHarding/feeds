@@ -4,10 +4,8 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.harding.feeds.FeedsApplication
-import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.label
-import java.time.Duration
-import java.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -56,10 +54,10 @@ class FeedTileService : TileService() {
         } else {
             val active = database.feedDao().activeFeed().first()
             if (active != null) {
-                val elapsed = formatHoursMinutes(Duration.between(active.startTime, Instant.now()))
+                val since = "since ${formatClockTime(active.startTime)}"
                 tile.state = Tile.STATE_ACTIVE
                 tile.label = "Stop feed"
-                tile.setSubtitleCompat(listOfNotNull(active.side?.label, elapsed).joinToString(" · "))
+                tile.setSubtitleCompat(listOfNotNull(active.side?.label, since).joinToString(" · "))
             } else {
                 tile.state = Tile.STATE_INACTIVE
                 tile.label = "Start feed"

@@ -55,7 +55,7 @@ import kotlin.math.abs
  * The one-thumb entry surface, organised read-high / touch-low: what you read (last feed, the
  * hero time) sits up top for the eyes; what you operate (ruler, side, action) sits in the
  * bottom thumb arc. The feed time is the hero - before a feed it's the *start* time, during one
- * it's the *finish* time, both defaulting to a minute ago and tracking that until scrubbed. The
+ * it's the *finish* time, both defaulting to now and tracking that until scrubbed. The
  * ruler owns horizontal drag; a horizontal swipe on the rest of the surface is the side
  * shortcut, so the two gestures no longer share a target. The controls sit directly above the
  * history sheet - the scaffold's own content padding reserves the peek, so the button is never
@@ -78,12 +78,12 @@ fun EntrySurface(
     val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     val currentOnSelectSide by rememberUpdatedState(onSelectSide)
 
-    // The scrubbed time, or null to track "a minute ago" live until the user adjusts it.
+    // The scrubbed time, or null to track "now" live until the user adjusts it.
     // Reset whenever we switch between start-mode and finish-mode.
     var pending by remember { mutableStateOf<Instant?>(null) }
     LaunchedEffect(activeFeed?.id) { pending = null }
 
-    val defaultTime = now.minus(Duration.ofMinutes(1))
+    val defaultTime = now
     val displayedTime = when {
         activeFeed != null -> pending ?: maxOf(defaultTime, activeFeed.startTime)
         else -> pending ?: defaultTime

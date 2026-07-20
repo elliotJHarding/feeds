@@ -36,12 +36,14 @@ Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme default):
 - The **editable feed time is the hero element**, not a live wall clock and not a running
   stopwatch (revised after dev testing: a parent is usually mid-feed by the time they reach
   the phone, so the value they set matters more than catching the live moment). Before a feed
-  it is the **start** time; during one it is the **finish** time. Both default to **now minus
-  1 minute** and track that until scrubbed. No elapsed-timer counter on the entry surface.
+  it is the **start** time; during one it is the **finish** time. Both default to **now** and
+  track that until scrubbed. No elapsed-timer counter on the entry surface. (The earlier
+  now-minus-1-minute backdate was reverted after daily use — in practice a parent hits the
+  button as the feed starts, so the shown time should be the current moment.)
 - One large start/finish button drives the in-progress lifecycle: START creates an in-progress
   feed at the shown start time; FINISH sets the end time to the shown finish time. In-progress
-  feeds are retained (widget/tile still start/stop via the shared use case, defaulting to
-  now minus 1 minute since they have no time UI).
+  feeds are retained (widget/tile still start/stop via the shared use case, defaulting to now
+  since they have no time UI).
 - The **last completed feed is shown prominently** (how long ago, side, start–end range).
 - Side pre-selected to the **opposite of the last feed's side**; L/R also settable by **swiping
   left/right** anywhere on the entry surface, with tap-on-toggle as the discoverable fallback.
@@ -52,7 +54,7 @@ Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme default):
 
 ### Quick entry surfaces
 
-- **Home-screen widget** (Glance): shows time-since-last-feed + last side; one tap starts a feed with the side prepopulated; shows elapsed time + stop when a feed is in progress. Reads the local Room cache so it works offline and without app launch.
+- **Home-screen widget** (Glance): shows the last feed's clock time + last side; one tap starts a feed with the side prepopulated; when a feed is in progress it shows the start clock time + stop. The glance-value is an absolute clock time (not a relative "2h ago"/"12m" duration) so it never goes stale between the widget's infrequent background refreshes. Reads the local Room cache so it works offline and without app launch.
 - **Quick Settings tile**: starts/stops a feed from the pull-down shade, same intent as the widget.
 - App shortcuts (long-press icon) are not planned; the widget and tile cover the use case.
 

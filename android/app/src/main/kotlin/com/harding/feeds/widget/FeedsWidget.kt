@@ -33,19 +33,19 @@ import com.harding.feeds.FeedsApplication
 import com.harding.feeds.MainActivity
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
-import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.sideColor
-import java.time.Duration
 import java.time.Instant
 import kotlinx.coroutines.flow.first
 
 /**
  * Home-screen quick entry, sized to a single 2x1 cell: one glance-value plus one action. Renders
- * a snapshot read straight from Room (works offline, no app launch); freshness comes from
- * [QuickEntryNotifier] after every feed write and from [WidgetRefreshWorker] periodically, so the
- * "since last" and elapsed texts are as fresh as the last update, not ticking. Tapping the value
- * opens the app; tapping the chip starts/stops via the shared use case.
+ * a snapshot read straight from Room (works offline, no app launch), refreshed by
+ * [QuickEntryNotifier] after every feed write and after each sync. The glance-value is an
+ * absolute clock time (last feed's time, or the in-progress start), so it stays correct however
+ * long since the last render - no ticking needed. Tapping the value opens the app; tapping the
+ * chip starts/stops via the shared use case.
  */
 class FeedsWidget : GlanceAppWidget() {
 
@@ -65,7 +65,7 @@ class FeedsWidget : GlanceAppWidget() {
 
         val active = feedDao.activeFeed().first()
         if (active != null) {
-            return WidgetState.Feeding(active.side, Duration.between(active.startTime, Instant.now()))
+            return WidgetState.Feeding(active.side, active.startTime)
         }
         return WidgetState.Idle(
             lastEnded = feedDao.latestEndedFeed().first(),
@@ -77,7 +77,7 @@ class FeedsWidget : GlanceAppWidget() {
 private sealed interface WidgetState {
     data object NotSetUp : WidgetState
     data class Idle(val lastEnded: FeedEntity?, val nextSide: Side) : WidgetState
-    data class Feeding(val side: Side?, val elapsed: Duration) : WidgetState
+    data class Feeding(val side: Side?, val startTime: Instant) : WidgetState
 }
 
 /** One tap on the chip starts/stops via the same use-case as the in-app button. */
@@ -112,8 +112,8 @@ private fun WidgetContent(state: WidgetState) {
 
             is WidgetState.Idle -> {
                 Info(
-                    label = "SINCE LAST",
-                    value = sinceLastText(state.lastEnded),
+                    label = "LAST FEED",
+                    value = lastFeedText(state.lastEnded),
                     modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
                 Spacer(GlanceModifier.width(10.dp))
@@ -124,7 +124,7 @@ private fun WidgetContent(state: WidgetState) {
                 val side = state.side?.let { "${it.label} · " } ?: ""
                 Info(
                     label = "FEEDING",
-                    value = "$side${formatHoursMinutes(state.elapsed)}",
+                    value = "${side}since ${formatClockTime(state.startTime)}",
                     modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
                 Spacer(GlanceModifier.width(10.dp))
@@ -169,8 +169,8 @@ private val Dim = ColorProvider(Color(0xFFA89384))
 private val OnAccent = ColorProvider(Color(0xFF17110C))
 private val Ember = Color(0xFFCF7367)
 
-private fun sinceLastText(lastEnded: FeedEntity?): String {
+private fun lastFeedText(lastEnded: FeedEntity?): String {
     val end = lastEnded?.endTime ?: return "No feeds yet"
-    val side = lastEnded.side?.let { " ${it.label}" } ?: ""
-    return "${formatHoursMinutes(Duration.between(end, Instant.now()))}$side"
+    val side = lastEnded.side?.let { " · ${it.label}" } ?: ""
+    return "${formatClockTime(end)}$side"
 }
