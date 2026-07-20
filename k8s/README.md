@@ -84,6 +84,37 @@ Subsequent image deploys: the tag is `:latest` with `imagePullPolicy: Always`
 kubectl rollout restart deployment/feeds
 ```
 
+In practice the server image is built by GitHub Actions (`.github/workflows/build-image.yml`)
+on push to `main`, not locally — a local Apple-Silicon build produces an arm64 image the amd64
+cluster can't run (`exec format error`). The commands above still work on an amd64 host.
+
+## Registry TLS cert — recurring gotcha (re-expires ~every 90 days)
+
+The cluster registry `grubplanner.co.uk:32000` serves TLS from a **static** Let's Encrypt cert in
+secret `registry-certs` (namespace `container-registry`). Nothing renews it, so it lapses roughly
+every 90 days and **all pushes fail** (feeds *and* meals) with:
+
+```
+curl: (60) SSL certificate problem: certificate has expired
+```
+
+Quick fix — copy the cluster's still-valid ingress cert (`default/tls-cert`, auto-renewed by
+cert-manager, and it covers `grubplanner.co.uk`) into `registry-certs`, then restart the registry:
+
+```bash
+kubectl get secret tls-cert -n default -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/tls.crt
+kubectl get secret tls-cert -n default -o jsonpath='{.data.tls\.key}' | base64 -d > /tmp/tls.key
+kubectl create secret tls registry-certs --cert=/tmp/tls.crt --key=/tmp/tls.key \
+  -n container-registry --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/registry -n container-registry
+rm -f /tmp/tls.crt /tmp/tls.key
+# verify (no -k): curl -sS https://grubplanner.co.uk:32000/v2/ -> HTTP 200
+```
+
+Permanent fix (not yet done): have cert-manager manage `registry-certs` (an `Issuer` in the
+`container-registry` namespace + a `Certificate`, or a cert reflector mirroring `default/tls-cert`)
+so it auto-renews and this stops recurring.
+
 ## Deviations from the meals manifests
 
 - No Redis env block (feeds has no Redis) and no `GOOGLE_CLIENT_SECRET`
