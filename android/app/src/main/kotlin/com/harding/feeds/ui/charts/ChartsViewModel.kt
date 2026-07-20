@@ -34,6 +34,8 @@ class ChartsViewModel(container: AppContainer) : ViewModel() {
         val days: List<LocalDate>,
         val segments: List<Segment>,
         val minutesPerDay: List<DayMinutes>,
+        /** Mean length of completed feeds started on each day; null where a day has no feeds. */
+        val avgMinutesPerDay: List<Int?>,
     )
 
     private val zone = ZoneId.systemDefault()
@@ -51,7 +53,7 @@ class ChartsViewModel(container: AppContainer) : ViewModel() {
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            ChartData(days, emptyList(), List(days.size) { DayMinutes(0, 0, 0) }),
+            ChartData(days, emptyList(), List(days.size) { DayMinutes(0, 0, 0) }, List(days.size) { null }),
         )
 
     private fun buildChartData(feeds: List<FeedEntity>): ChartData {
@@ -86,7 +88,21 @@ class ChartsViewModel(container: AppContainer) : ViewModel() {
         }
         val minutesPerDay = days.indices.map { DayMinutes(left[it], right[it], unknown[it]) }
 
-        return ChartData(days, segments, minutesPerDay)
+        // Average feed length groups whole feeds by their start day (not the day-split segments
+        // above) and counts only completed feeds, so an in-progress feed doesn't drag the mean.
+        val totalByDay = IntArray(days.size)
+        val countByDay = IntArray(days.size)
+        feeds.forEach { feed ->
+            val end = feed.endTime ?: return@forEach
+            val dayIndex = indexByDay[feed.startTime.atZone(zone).toLocalDate()] ?: return@forEach
+            totalByDay[dayIndex] +=
+                Duration.between(feed.startTime, end).coerceAtLeast(Duration.ZERO).toMinutes().toInt()
+            countByDay[dayIndex]++
+        }
+        val avgMinutesPerDay =
+            days.indices.map { if (countByDay[it] == 0) null else totalByDay[it] / countByDay[it] }
+
+        return ChartData(days, segments, minutesPerDay, avgMinutesPerDay)
     }
 
     private companion object {

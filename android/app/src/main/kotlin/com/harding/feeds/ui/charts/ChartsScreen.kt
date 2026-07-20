@@ -32,7 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -89,6 +95,14 @@ fun ChartsScreen(vm: ChartsViewModel, onBack: () -> Unit) {
                 caption = "Total time feeding per day over the last two weeks",
             )
             DurationTrendChart(data, Modifier.fillMaxWidth().height(220.dp))
+
+            Spacer(Modifier.height(32.dp))
+
+            SectionHeader(
+                title = "Average feed length",
+                caption = "Mean length of each day's feeds over the last two weeks",
+            )
+            AvgFeedLengthChart(data, Modifier.fillMaxWidth().height(220.dp))
 
             Spacer(Modifier.height(32.dp))
         }
@@ -240,6 +254,137 @@ private fun DurationTrendChart(data: ChartsViewModel.ChartData, modifier: Modifi
     }
 }
 
+/**
+ * Average feed length per day as a single-series smooth trend. A day with no completed feeds
+ * has no point and breaks the curve, so each smooth run only ever joins real data.
+ */
+@Composable
+private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifier = Modifier) {
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall
+        .copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val lineColor = MaterialTheme.colorScheme.primary
+
+    Canvas(modifier) {
+        val leftPad = 34.dp.toPx()
+        val bottomPad = 18.dp.toPx()
+        val topPad = 6.dp.toPx()
+        val plotWidth = size.width - leftPad
+        val plotHeight = size.height - bottomPad - topPad
+        val columnWidth = plotWidth / data.days.size
+
+        val maxAvg = data.avgMinutesPerDay.filterNotNull().maxOrNull() ?: 0
+        val step = fineGridStep(maxAvg)
+        val axisMax = (maxAvg / step + 1) * step
+
+        // Value gridlines + labels every [step] minutes ("2m" / "10m" / "1h").
+        var value = 0
+        while (value <= axisMax) {
+            val y = topPad + plotHeight * (1f - value.toFloat() / axisMax)
+            drawLine(gridColor, Offset(leftPad, y), Offset(size.width, y), strokeWidth = 1f)
+            val label = textMeasurer.measure(AnnotatedString(minutesLabel(value)), labelStyle)
+            drawText(
+                label,
+                topLeft = Offset(leftPad - label.size.width - 6.dp.toPx(), y - label.size.height / 2f),
+            )
+            value += step
+        }
+
+        drawDayLabels(data.days, textMeasurer, labelStyle, leftPad, columnWidth)
+
+        // Each day's average as a point; contiguous days form one smooth run, and a null day
+        // (no completed feed) starts a new run so the curve never bridges missing data.
+        val points = data.avgMinutesPerDay.mapIndexed { index, avg ->
+            avg?.let {
+                Offset(
+                    leftPad + columnWidth * (index + 0.5f),
+                    topPad + plotHeight * (1f - it.toFloat() / axisMax),
+                )
+            }
+        }
+        val runs = mutableListOf<List<Offset>>()
+        var current = mutableListOf<Offset>()
+        points.forEach { p ->
+            if (p == null) {
+                if (current.isNotEmpty()) { runs.add(current); current = mutableListOf() }
+            } else {
+                current.add(p)
+            }
+        }
+        if (current.isNotEmpty()) runs.add(current)
+
+        // Faint dashed least-squares trend across every day that has an average, so the overall
+        // two-week direction reads at a glance beneath the day-to-day curve.
+        drawTrendLine(data.avgMinutesPerDay, axisMax, leftPad, columnWidth, topPad, plotHeight, lineColor)
+
+        val dotRadius = 3.dp.toPx()
+        runs.forEach { run ->
+            drawSmoothLine(run, lineColor, 2.dp.toPx())
+            run.forEach { drawCircle(lineColor, radius = dotRadius, center = it) }
+        }
+    }
+}
+
+/** Straight least-squares fit over the non-null [avgMinutesPerDay], drawn as a faint dashed line. */
+private fun DrawScope.drawTrendLine(
+    avgMinutesPerDay: List<Int?>,
+    axisMax: Int,
+    leftPad: Float,
+    columnWidth: Float,
+    topPad: Float,
+    plotHeight: Float,
+    color: Color,
+) {
+    val points = avgMinutesPerDay.mapIndexedNotNull { index, avg -> avg?.let { index to it } }
+    if (points.size < 2) return
+
+    val meanX = points.sumOf { it.first }.toFloat() / points.size
+    val meanY = points.sumOf { it.second }.toFloat() / points.size
+    var sxx = 0f
+    var sxy = 0f
+    points.forEach { (x, y) ->
+        sxx += (x - meanX) * (x - meanX)
+        sxy += (x - meanX) * (y - meanY)
+    }
+    if (sxx == 0f) return
+    val slope = sxy / sxx
+    val intercept = meanY - slope * meanX
+
+    fun pointAt(index: Int): Offset {
+        val value = (intercept + slope * index).coerceIn(0f, axisMax.toFloat())
+        return Offset(
+            leftPad + columnWidth * (index + 0.5f),
+            topPad + plotHeight * (1f - value / axisMax),
+        )
+    }
+    drawLine(
+        color.copy(alpha = 0.5f),
+        pointAt(points.first().first),
+        pointAt(points.last().first),
+        strokeWidth = 1.5.dp.toPx(),
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)),
+    )
+}
+
+/** A Catmull-Rom smooth stroke through [pts]; a single point draws nothing (its dot suffices). */
+private fun DrawScope.drawSmoothLine(pts: List<Offset>, color: Color, strokeWidth: Float) {
+    if (pts.size < 2) return
+    val path = Path().apply {
+        moveTo(pts[0].x, pts[0].y)
+        for (i in 0 until pts.size - 1) {
+            val p0 = pts[if (i == 0) 0 else i - 1]
+            val p1 = pts[i]
+            val p2 = pts[i + 1]
+            val p3 = pts[if (i + 2 <= pts.lastIndex) i + 2 else pts.lastIndex]
+            val c1 = Offset(p1.x + (p2.x - p0.x) / 6f, p1.y + (p2.y - p0.y) / 6f)
+            val c2 = Offset(p2.x - (p3.x - p1.x) / 6f, p2.y - (p3.y - p1.y) / 6f)
+            cubicTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
+        }
+    }
+    drawPath(path, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+}
+
 /** Day-of-month labels on alternating columns, aligned so today is always labelled. */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDayLabels(
     days: List<LocalDate>,
@@ -262,6 +407,10 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDayLabels(
 
 private fun gridStep(maxMinutes: Int): Int =
     listOf(15, 30, 60, 120, 240).firstOrNull { maxMinutes / it <= 3 } ?: 480
+
+/** Finer step than [gridStep]: averages sit in a narrow band, so aim for ~5-8 gridlines. */
+private fun fineGridStep(maxMinutes: Int): Int =
+    listOf(1, 2, 5, 10, 15, 20, 30, 60).firstOrNull { maxMinutes / it <= 7 } ?: 120
 
 private fun minutesLabel(minutes: Int): String = when {
     minutes == 0 -> "0"

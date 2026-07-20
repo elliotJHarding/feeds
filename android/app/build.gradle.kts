@@ -16,8 +16,8 @@ android {
         applicationId = "com.harding.feeds"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${property("feeds.googleWebClientId")}\"")
         buildConfigField("String", "API_BASE_URL", "\"${property("feeds.apiBaseUrl")}\"")
