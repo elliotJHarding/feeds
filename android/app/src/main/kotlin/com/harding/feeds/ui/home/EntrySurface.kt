@@ -57,7 +57,10 @@ import kotlin.math.abs
  * bottom thumb arc. The feed time is the hero - before a feed it's the *start* time, during one
  * it's the *finish* time, both defaulting to now and tracking that until scrubbed. The
  * ruler owns horizontal drag; a horizontal swipe on the rest of the surface is the side
- * shortcut, so the two gestures no longer share a target. The controls sit directly above the
+ * shortcut, so the two gestures no longer share a target. The swipe only works *before* a feed:
+ * during one it used to rewrite the active feed's side, and because the detector covers the
+ * FINISH button a wobbly press changed the record silently - mid-feed corrections now go
+ * through the history sheet instead. The controls sit directly above the
  * history sheet - the scaffold's own content padding reserves the peek, so the button is never
  * covered without pushing the layout up.
  */
@@ -77,6 +80,7 @@ fun EntrySurface(
     val haptics = LocalHapticFeedback.current
     val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     val currentOnSelectSide by rememberUpdatedState(onSelectSide)
+    val sideSwipeEnabled by rememberUpdatedState(activeFeed == null)
 
     // The scrubbed time, or null to track "now" live until the user adjusts it.
     // Reset whenever we switch between start-mode and finish-mode.
@@ -101,7 +105,7 @@ fun EntrySurface(
                 detectHorizontalDragGestures(
                     onDragStart = { total = 0f },
                     onDragEnd = {
-                        if (abs(total) > swipeThresholdPx) {
+                        if (sideSwipeEnabled && abs(total) > swipeThresholdPx) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             currentOnSelectSide(if (total < 0) Side.l else Side.r)
                         }

@@ -67,16 +67,13 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     var inviteCode by mutableStateOf<InviteCodeState>(InviteCodeState.Loading)
         private set
 
-    /** Tap or swipe: before a feed it picks the side to log; during one it corrects the record. */
+    /**
+     * Tap or swipe before a feed: picks the side to log. Ignored while a feed is in progress -
+     * an accidental swipe used to silently rewrite the active feed's side; corrections go
+     * through the history sheet's edit instead.
+     */
     fun selectSide(side: Side) {
-        val active = activeFeed.value
-        if (active == null) {
-            sideOverride.value = side
-        } else if (active.side != side) {
-            viewModelScope.launch {
-                feedRepository.updateFeed(active.id, side, active.startTime, active.endTime, active.amountMl)
-            }
-        }
+        if (activeFeed.value == null) sideOverride.value = side
     }
 
     /** Start an in-progress feed at the time scrubbed on the entry surface. */

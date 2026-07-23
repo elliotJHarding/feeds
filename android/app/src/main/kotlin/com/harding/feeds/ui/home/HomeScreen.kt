@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,12 +28,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,8 +46,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -54,10 +59,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harding.feeds.data.local.entity.FeedEntity
 import java.time.Instant
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Home: the entry surface owns the screen; history lives in a bottom sheet peeking from
- * below, so one-thumb entry stays primary and the list is a flick away.
+ * below, so one-thumb entry stays primary and the list is a flick away. An upward swipe
+ * anywhere on the entry surface opens the sheet - not just a drag on the tray itself.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +79,12 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     var editingFeed by remember { mutableStateOf<FeedEntity?>(null) }
     var showInvite by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
+    val scaffoldState = rememberBottomSheetScaffoldState()
+    val sheetSwipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
+
     BottomSheetScaffold(
+        scaffoldState = scaffoldState,
         sheetPeekHeight = PeekHeight,
         sheetContent = {
             HistoryList(
@@ -81,7 +93,24 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
             )
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // Vertical axis only, so it coexists with the entry surface's horizontal
+                // side-swipe and the ruler's scrub via drag-axis slop.
+                .pointerInput(Unit) {
+                    var total = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (total < -sheetSwipeThresholdPx) {
+                                scope.launch { scaffoldState.bottomSheetState.expand() }
+                            }
+                        },
+                    ) { _, dragAmount -> total += dragAmount }
+                },
+        ) {
             EntrySurface(
                 now = now,
                 activeFeed = activeFeed,
