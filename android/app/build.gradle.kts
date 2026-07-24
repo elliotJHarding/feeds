@@ -16,8 +16,8 @@ android {
         applicationId = "com.harding.feeds"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
 
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${property("feeds.googleWebClientId")}\"")
         buildConfigField("String", "API_BASE_URL", "\"${property("feeds.apiBaseUrl")}\"")
@@ -135,4 +135,8 @@ dependencies {
     implementation(libs.security.crypto)
 
     implementation(libs.coroutines.android)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
 }

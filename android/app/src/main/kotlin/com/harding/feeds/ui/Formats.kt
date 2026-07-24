@@ -57,6 +57,14 @@ val Side.sideColor: Color get() = if (this == Side.l) Color(0xFF82AED2) else Col
 /** Warm-dark foreground - both side colours are light enough that near-black reads cleanly. */
 val onSideColor: Color get() = Color(0xFF17110C)
 
+/**
+ * Bottle feeds get their own accent - a soft sage, hue-distinct from both side colours so
+ * bottle rows and marks never read as a breast side. Light enough that [onSideColor] holds.
+ */
+val bottleColor: Color get() = Color(0xFF9CBF8E)
+
+fun formatAmount(ml: Int): String = "$ml ml"
+
 /** Accepts "14:32", "1432", "9:05", "905". */
 fun parseTypedTime(text: String): LocalTime? {
     val match = Regex("^(\\d{1,2}):?(\\d{2})$").find(text.trim()) ?: return null

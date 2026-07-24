@@ -74,6 +74,8 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     val activeFeed by vm.activeFeed.collectAsStateWithLifecycle()
     val latestEnded by vm.latestEndedFeed.collectAsStateWithLifecycle()
     val selectedSide by vm.selectedSide.collectAsStateWithLifecycle()
+    val entryMode by vm.entryMode.collectAsStateWithLifecycle()
+    val bottleAmount by vm.bottleAmount.collectAsStateWithLifecycle()
     val history by vm.history.collectAsStateWithLifecycle()
 
     var editingFeed by remember { mutableStateOf<FeedEntity?>(null) }
@@ -117,9 +119,14 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
                 latestEndedFeed = latestEnded,
                 selectedSide = selectedSide,
                 canStart = baby != null,
+                mode = entryMode,
+                bottleAmountMl = bottleAmount,
                 onStart = vm::startFeed,
                 onFinish = vm::finishFeed,
                 onSelectSide = vm::selectSide,
+                onSelectMode = vm::selectMode,
+                onBottleAmountChange = vm::setBottleAmount,
+                onLogBottle = vm::logBottle,
                 onAdjustActiveStart = vm::adjustActiveStart,
             )
             TopBar(
@@ -136,8 +143,8 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     editingFeed?.let { feed ->
         FeedEditSheet(
             feed = feed,
-            onSave = { side, start, end ->
-                vm.saveFeed(feed, side, start, end)
+            onSave = { side, start, end, amountMl ->
+                vm.saveFeed(feed, side, start, end, amountMl)
                 editingFeed = null
             },
             onDelete = {

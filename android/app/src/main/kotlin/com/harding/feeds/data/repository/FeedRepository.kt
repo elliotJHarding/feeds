@@ -32,6 +32,8 @@ class FeedRepository(
 
     fun latestFeed(): Flow<FeedEntity?> = feedDao.latestFeed()
 
+    fun latestBreastFeed(): Flow<FeedEntity?> = feedDao.latestFeedOfType(FeedType.bREAST)
+
     fun latestEndedFeed(): Flow<FeedEntity?> = feedDao.latestEndedFeed()
 
     fun activeFeed(): Flow<FeedEntity?> = feedDao.activeFeed()

@@ -31,6 +31,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.harding.feeds.FeedsApplication
 import com.harding.feeds.MainActivity
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.ui.formatClockTime
@@ -170,7 +171,10 @@ private val OnAccent = ColorProvider(Color(0xFF17110C))
 private val Ember = Color(0xFFCF7367)
 
 private fun lastFeedText(lastEnded: FeedEntity?): String {
-    val end = lastEnded?.endTime ?: return "No feeds yet"
-    val side = lastEnded.side?.let { " · ${it.label}" } ?: ""
-    return "${formatClockTime(end)}$side"
+    if (lastEnded?.endTime == null) return "No feeds yet"
+    val detail = if (lastEnded.type == FeedType.bOTTLE) " · bottle"
+    else lastEnded.side?.let { " · ${it.label}" } ?: ""
+    // The start time, not the end: feeding intervals are measured start-to-start, so this is
+    // the number the every-N-hours rule works from.
+    return "${formatClockTime(lastEnded.startTime)}$detail"
 }

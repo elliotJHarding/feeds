@@ -31,7 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.ui.bottleColor
+import com.harding.feeds.ui.components.BottleGlyph
 import com.harding.feeds.ui.dayLabel
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
@@ -49,10 +52,11 @@ import java.time.LocalDate
  * static too - each one relates two recorded timestamps.
  *
  * Each row carries two inline bars: the feed's duration growing from the left, and the gap
- * that *preceded* the feed (previous feed's end to this one's start) growing from the right.
- * Feeds and gaps live on different scales (a feed is ~20m, an overnight gap ~9h), so each bar
- * type has its own fixed cap - bars compare with bars of their own kind, and a given length
- * means the same thing next week as it does today.
+ * that *preceded* the feed (previous feed's start to this one's start - feeding intervals are
+ * measured start-to-start) growing from the right. Feeds and gaps live on different scales
+ * (a feed is ~20m, an overnight gap ~9h), so each bar type has its own fixed cap - bars
+ * compare with bars of their own kind, and a given length means the same thing next week as
+ * it does today.
  */
 @Composable
 fun HistoryList(
@@ -62,16 +66,16 @@ fun HistoryList(
 ) {
     val today = LocalDate.now()
 
-    // The gap preceding each feed, keyed by feed id: this feed's start minus the next-older
-    // feed's end. Computed over the flattened list so the overnight gap lands on the first
-    // feed of a day even though its predecessor sits in the previous day group. Overlaps
-    // (negative gaps from hand-edited times), sub-minute gaps (which would label as "0m"),
-    // and unfinished older feeds produce no bar.
+    // The interval preceding each feed, keyed by feed id: this feed's start minus the
+    // next-older feed's start (start-to-start is how feeding frequency is measured, and it
+    // needs no end time, so an in-progress predecessor still yields a bar). Computed over the
+    // flattened list so the overnight gap lands on the first feed of a day even though its
+    // predecessor sits in the previous day group. Overlaps (negative gaps from hand-edited
+    // times) and sub-minute gaps (which would label as "0m") produce no bar.
     val gapsBefore = remember(days) {
         buildMap {
             days.flatMap { it.feeds }.zipWithNext { newer, older ->
-                val olderEnd = older.endTime ?: return@zipWithNext
-                val gap = Duration.between(olderEnd, newer.startTime)
+                val gap = Duration.between(older.startTime, newer.startTime)
                 if (gap >= Duration.ofMinutes(1)) put(newer.id, gap)
             }
         }
@@ -116,8 +120,12 @@ private fun DayHeader(day: DayFeeds, today: LocalDate) {
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
         )
+        // Bottles have zero duration so they never inflate the time total; their volume gets
+        // its own term instead, shown only on days that had bottles.
+        val bottleMl = day.feeds.filter { it.type == FeedType.bOTTLE }.sumOf { it.amountMl ?: 0 }
+        val volume = if (bottleMl > 0) " · $bottleMl ml" else ""
         Text(
-            "${day.feeds.size} feeds · ${formatHoursMinutes(total)}",
+            "${day.feeds.size} feeds · ${formatHoursMinutes(total)}$volume",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -127,6 +135,7 @@ private fun DayHeader(day: DayFeeds, today: LocalDate) {
 @Composable
 private fun FeedRow(feed: FeedEntity, gapBefore: Duration?, onTap: () -> Unit) {
     val end = feed.endTime
+    val isBottle = feed.type == FeedType.bOTTLE
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -140,37 +149,57 @@ private fun FeedRow(feed: FeedEntity, gapBefore: Duration?, onTap: () -> Unit) {
             modifier = Modifier
                 .size(26.dp)
                 .clip(CircleShape)
-                .background(side?.sideColor ?: MaterialTheme.colorScheme.surfaceVariant),
+                .background(
+                    when {
+                        isBottle -> bottleColor
+                        side != null -> side.sideColor
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ),
         ) {
-            Text(
-                side?.label ?: "·",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (side != null) onSideColor else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (isBottle) {
+                BottleGlyph(onSideColor)
+            } else {
+                Text(
+                    side?.label ?: "·",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (side != null) onSideColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Spacer(Modifier.width(12.dp))
         Text(
-            "${formatClockTime(feed.startTime)} – ${end?.let { formatClockTime(it) } ?: "…"}",
+            // A bottle is a point event: one time, not a range.
+            if (isBottle) formatClockTime(feed.startTime)
+            else "${formatClockTime(feed.startTime)} – ${end?.let { formatClockTime(it) } ?: "…"}",
             style = MaterialTheme.typography.bodyLarge,
         )
         Spacer(Modifier.width(12.dp))
 
         // Two independent slots so a capped feed bar and a capped gap bar can never collide.
         Box(Modifier.weight(1.1f), contentAlignment = Alignment.CenterStart) {
-            if (end == null) {
-                Text(
+            when {
+                isBottle -> ValueBar(
+                    label = feed.amountMl?.let { "${it}ml" } ?: "bottle",
+                    // Amount-scaled so bottle bars compare with bottle bars; an amountless
+                    // bottle gets the same minimum sliver a zero value would.
+                    fraction = (feed.amountMl ?: 0).toFloat() / BottleBarCapMl,
+                    barColor = bottleColor,
+                    barHeight = 24.dp,
+                    labelTemplate = "150ml",
+                )
+                end == null -> Text(
                     "in progress",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
-            } else {
-                DurationBar(
+                else -> DurationBar(
                     duration = Duration.between(feed.startTime, end).coerceAtLeast(Duration.ZERO),
                     cap = FeedBarCap,
                     barColor = side?.sideColor ?: MaterialTheme.colorScheme.surfaceVariant,
                     barHeight = 24.dp,
-                    labelTemplate = "59m",
+                    labelTemplate = "150ml",
                 )
             }
         }
@@ -207,8 +236,26 @@ private fun DurationBar(
     labelTemplate: String,
     modifier: Modifier = Modifier,
     growFromEnd: Boolean = false,
+) = ValueBar(
+    label = formatHoursMinutes(duration),
+    fraction = duration.toMillis().toFloat() / cap.toMillis(),
+    barColor = barColor,
+    barHeight = barHeight,
+    labelTemplate = labelTemplate,
+    modifier = modifier,
+    growFromEnd = growFromEnd,
+)
+
+@Composable
+private fun ValueBar(
+    label: String,
+    fraction: Float,
+    barColor: Color,
+    barHeight: Dp,
+    labelTemplate: String,
+    modifier: Modifier = Modifier,
+    growFromEnd: Boolean = false,
 ) {
-    val label = formatHoursMinutes(duration)
     val style = MaterialTheme.typography.labelMedium
     val measurer = rememberTextMeasurer()
     val labelColumnWidth = with(LocalDensity.current) {
@@ -216,8 +263,8 @@ private fun DurationBar(
     }
 
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val fraction = (duration.toMillis().toFloat() / cap.toMillis()).coerceIn(0.02f, 1f)
-        val barWidth = (maxWidth - labelColumnWidth - 6.dp).coerceAtLeast(0.dp) * fraction
+        val barWidth = (maxWidth - labelColumnWidth - 6.dp).coerceAtLeast(0.dp) *
+            fraction.coerceIn(0.02f, 1f)
 
         @Composable
         fun Label() = Box(Modifier.width(labelColumnWidth), contentAlignment = Alignment.CenterEnd) {
@@ -261,3 +308,6 @@ private fun DurationBar(
 // (feeds 2-18m, daytime gaps 0.5-2.5h); adjust as feeding patterns lengthen.
 private val FeedBarCap: Duration = Duration.ofMinutes(20)
 private val GapBarCap: Duration = Duration.ofHours(4)
+
+// A full expressed-milk top-up bottle; bigger amounts clamp, the label stays exact.
+private const val BottleBarCapMl = 150

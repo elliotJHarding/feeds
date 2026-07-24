@@ -2,6 +2,7 @@ package com.harding.feeds.ui.charts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.di.AppContainer
@@ -23,7 +24,13 @@ import kotlinx.coroutines.flow.stateIn
 class ChartsViewModel(container: AppContainer) : ViewModel() {
 
     /** A feed's span within one day column, in minutes since that day's midnight. */
-    data class Segment(val dayIndex: Int, val startMinute: Int, val endMinute: Int, val side: Side?)
+    data class Segment(
+        val dayIndex: Int,
+        val startMinute: Int,
+        val endMinute: Int,
+        val side: Side?,
+        val isBottle: Boolean = false,
+    )
 
     /** A day's feeding minutes split by side, for the stacked duration bar. */
     data class DayMinutes(val left: Int, val right: Int, val unknown: Int) {
@@ -72,13 +79,15 @@ class ChartsViewModel(container: AppContainer) : ViewModel() {
                         .toMinutes().toInt().coerceIn(0, MINUTES_PER_DAY)
                     val endMinute = Duration.between(dayStart, minOf(end, dayEnd))
                         .toMinutes().toInt().coerceIn(startMinute, MINUTES_PER_DAY)
-                    Segment(dayIndex, startMinute, endMinute, feed.side)
+                    Segment(dayIndex, startMinute, endMinute, feed.side, feed.type == FeedType.bOTTLE)
                 }
                 .toList()
         }
 
+        // Both duration series are breast-only: a bottle is a zero-duration point event, so
+        // it has no minutes to stack and would only drag the per-day average toward zero.
         val left = IntArray(days.size); val right = IntArray(days.size); val unknown = IntArray(days.size)
-        segments.forEach { s ->
+        segments.filterNot { it.isBottle }.forEach { s ->
             val mins = s.endMinute - s.startMinute
             when (s.side) {
                 Side.l -> left[s.dayIndex] += mins
@@ -93,6 +102,7 @@ class ChartsViewModel(container: AppContainer) : ViewModel() {
         val totalByDay = IntArray(days.size)
         val countByDay = IntArray(days.size)
         feeds.forEach { feed ->
+            if (feed.type == FeedType.bOTTLE) return@forEach
             val end = feed.endTime ?: return@forEach
             val dayIndex = indexByDay[feed.startTime.atZone(zone).toLocalDate()] ?: return@forEach
             totalByDay[dayIndex] +=

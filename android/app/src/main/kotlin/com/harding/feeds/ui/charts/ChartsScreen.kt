@@ -46,6 +46,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harding.feeds.client.models.Side
+import com.harding.feeds.ui.bottleColor
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.sideColor
 import java.time.LocalDate
@@ -109,22 +110,23 @@ fun ChartsScreen(vm: ChartsViewModel, onBack: () -> Unit) {
     }
 }
 
-/** L/R colour key, so the mark and bar colours are interpretable. */
+/** L/R/bottle colour key, so the mark and bar colours are interpretable. */
 @Composable
 private fun SideLegend() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        listOf(Side.l, Side.r).forEach { side ->
-            Box(
-                Modifier.size(12.dp).clip(CircleShape).background(side.sideColor),
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "${side.label} side",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(20.dp))
-        }
+        (listOf(Side.l, Side.r).map { "${it.label} side" to it.sideColor } + ("bottle" to bottleColor))
+            .forEach { (label, color) ->
+                Box(
+                    Modifier.size(12.dp).clip(CircleShape).background(color),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(20.dp))
+            }
     }
 }
 
@@ -152,6 +154,7 @@ private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier =
     val leftColor = Side.l.sideColor
     val rightColor = Side.r.sideColor
     val unknownColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val bottleDotColor = bottleColor
 
     Canvas(modifier) {
         val leftPad = 34.dp.toPx()
@@ -189,6 +192,12 @@ private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier =
         data.segments.forEach { segment ->
             val x = leftPad + columnWidth * (segment.dayIndex + 0.5f)
             val y0 = topPad + plotHeight * segment.startMinute / MINUTES_PER_DAY
+            if (segment.isBottle) {
+                // A bottle is a point event - a dot, so top-ups read against the breast
+                // segments without pretending to have a duration.
+                drawCircle(bottleDotColor, radius = 4.dp.toPx(), center = Offset(x, y0))
+                return@forEach
+            }
             val y1 = maxOf(topPad + plotHeight * segment.endMinute / MINUTES_PER_DAY, y0 + minLength)
             val color = when (segment.side) {
                 Side.l -> leftColor

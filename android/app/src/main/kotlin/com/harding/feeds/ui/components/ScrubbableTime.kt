@@ -19,6 +19,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -64,22 +65,8 @@ fun ScrubbableTime(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable { showTypeDialog = true }
-            .pointerInput(Unit) {
-                var accumulated = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { accumulated = 0f },
-                ) { change, dragAmount ->
-                    change.consume()
-                    accumulated += dragAmount
-                    val detents = (accumulated / detentPx).toInt()
-                    if (detents != 0) {
-                        accumulated -= detents * detentPx
-                        repeat(abs(detents)) {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                        onChange(current.plus(detents.toLong(), ChronoUnit.MINUTES))
-                    }
-                }
+            .scrubDetents(detentPx, haptics) { detents ->
+                onChange(current.plus(detents.toLong(), ChronoUnit.MINUTES))
             }
             .padding(horizontal = 4.dp),
     )
@@ -130,4 +117,32 @@ internal fun TypeTimeDialog(
     )
 }
 
-private const val DETENT_WIDTH_DP = 18
+internal const val DETENT_WIDTH_DP = 18
+
+/**
+ * The shared scrub gesture: accumulates horizontal drag and fires [onSteps] once per detent,
+ * with a haptic tick each step. Consumes the drag so it wins over any horizontal gesture on
+ * an enclosing surface. Callers must read only rememberUpdatedState-backed values inside
+ * [onSteps] - the lambda is captured once by pointerInput.
+ */
+internal fun Modifier.scrubDetents(
+    detentPx: Float,
+    haptics: HapticFeedback,
+    onSteps: (Int) -> Unit,
+): Modifier = pointerInput(Unit) {
+    var accumulated = 0f
+    detectHorizontalDragGestures(
+        onDragStart = { accumulated = 0f },
+    ) { change, dragAmount ->
+        change.consume()
+        accumulated += dragAmount
+        val detents = (accumulated / detentPx).toInt()
+        if (detents != 0) {
+            accumulated -= detents * detentPx
+            repeat(abs(detents)) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+            onSteps(detents)
+        }
+    }
+}

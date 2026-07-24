@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.di.AppContainer
@@ -22,6 +23,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class DayFeeds(val date: LocalDate, val feeds: List<FeedEntity>)
+
+/** What the entry surface is set up to log. Breast is primary; bottle is a one-shot detour. */
+enum class EntryMode { BREAST, BOTTLE }
 
 /** Entry surface + history, backed entirely by Room flows (sync keeps them fresh). */
 class HomeViewModel(private val container: AppContainer) : ViewModel() {
@@ -42,6 +46,22 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Explicit user choice before starting; cleared when the feed starts. */
     private val sideOverride = MutableStateFlow<Side?>(null)
+
+    /**
+     * Plain view state, never persisted - the app always opens in breast mode, and a feed
+     * starting (locally or via a partner's sync) forces the surface back to breast.
+     */
+    private val entryModeState = MutableStateFlow(EntryMode.BREAST)
+    val entryMode: StateFlow<EntryMode> = entryModeState
+
+    private val bottleAmountState = MutableStateFlow<Int?>(null)
+    val bottleAmount: StateFlow<Int?> = bottleAmountState
+
+    init {
+        viewModelScope.launch {
+            activeFeed.collect { if (it != null) entryModeState.value = EntryMode.BREAST }
+        }
+    }
 
     /**
      * The side the big button will log: the active feed's side while feeding, else the
@@ -90,6 +110,33 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { toggleFeed.finish(endTime) }
     }
 
+    /** Switching into bottle mode seeds the amount from the last bottle logged (window: history). */
+    fun selectMode(mode: EntryMode) {
+        if (mode == EntryMode.BOTTLE && entryModeState.value != EntryMode.BOTTLE) {
+            bottleAmountState.value = lastBottleAmount() ?: DEFAULT_BOTTLE_ML
+        }
+        entryModeState.value = mode
+    }
+
+    fun setBottleAmount(amountMl: Int?) {
+        bottleAmountState.value = amountMl
+    }
+
+    /** Log a bottle as a completed point event at the scrubbed time; one-shot back to breast. */
+    fun logBottle(time: Instant) {
+        viewModelScope.launch {
+            if (toggleFeed.logBottle(bottleAmountState.value, time) is ToggleFeedUseCase.Result.LoggedBottle) {
+                entryModeState.value = EntryMode.BREAST
+            }
+        }
+    }
+
+    private fun lastBottleAmount(): Int? = history.value
+        .asSequence()
+        .flatMap { it.feeds }
+        .firstOrNull { it.type == FeedType.bOTTLE && it.amountMl != null }
+        ?.amountMl
+
     fun adjustActiveStart(newStart: Instant) {
         val active = activeFeed.value ?: return
         viewModelScope.launch {
@@ -103,9 +150,9 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun saveFeed(feed: FeedEntity, side: Side?, startTime: Instant, endTime: Instant?) {
+    fun saveFeed(feed: FeedEntity, side: Side?, startTime: Instant, endTime: Instant?, amountMl: Int?) {
         viewModelScope.launch {
-            feedRepository.updateFeed(feed.id, side, startTime, endTime, feed.amountMl)
+            feedRepository.updateFeed(feed.id, side, startTime, endTime, amountMl)
         }
     }
 
@@ -139,5 +186,6 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     private companion object {
         const val HISTORY_DAYS = 30L
+        const val DEFAULT_BOTTLE_ML = 100
     }
 }

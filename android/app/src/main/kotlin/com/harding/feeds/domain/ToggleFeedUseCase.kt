@@ -1,5 +1,6 @@
 package com.harding.feeds.domain
 
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.dao.BabyDao
 import com.harding.feeds.data.repository.FeedRepository
@@ -20,9 +21,12 @@ class ToggleFeedUseCase(
     private val babyDao: BabyDao,
 ) {
 
-    /** The side the next feed will log unless the user picks one explicitly. */
+    /**
+     * The side the next feed will log unless the user picks one explicitly. Alternates off
+     * the last breast feed - bottle feeds have no side and must not reset the alternation.
+     */
     fun defaultNextSide(): Flow<Side> =
-        feedRepository.latestFeed().map { it?.side?.opposite() ?: Side.l }
+        feedRepository.latestBreastFeed().map { it?.side?.opposite() ?: Side.l }
 
     /**
      * Stops the active feed if there is one, otherwise starts one. Times default to now;
@@ -50,9 +54,23 @@ class ToggleFeedUseCase(
         return Result.Stopped
     }
 
+    /**
+     * Logs a bottle feed as a completed point event - endTime equals startTime, so a bottle
+     * can never read as the in-progress feed on any surface.
+     */
+    suspend fun logBottle(amountMl: Int?, time: Instant): Result {
+        val babyId = babyDao.ids().firstOrNull() ?: return Result.NoBaby
+        feedRepository.createFeed(
+            babyId, side = null, startTime = time, endTime = time,
+            type = FeedType.bOTTLE, amountMl = amountMl,
+        )
+        return Result.LoggedBottle
+    }
+
     sealed interface Result {
         data class Started(val side: Side) : Result
         data object Stopped : Result
+        data object LoggedBottle : Result
 
         /** Nothing to log against - onboarding has not created the baby yet. */
         data object NoBaby : Result

@@ -1,5 +1,6 @@
 package com.harding.feeds.ui.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -35,11 +37,16 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.ui.components.BottleGlyph
+import com.harding.feeds.ui.components.ScrubbableAmount
 import com.harding.feeds.ui.components.SideToggle
 import com.harding.feeds.ui.components.TimeRuler
 import com.harding.feeds.ui.components.TypeTimeDialog
+import com.harding.feeds.ui.bottleColor
+import com.harding.feeds.ui.formatAmount
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
 import com.harding.feeds.ui.label
@@ -71,21 +78,27 @@ fun EntrySurface(
     latestEndedFeed: FeedEntity?,
     selectedSide: Side,
     canStart: Boolean,
+    mode: EntryMode,
+    bottleAmountMl: Int?,
     onStart: (side: Side, startTime: Instant) -> Unit,
     onFinish: (endTime: Instant) -> Unit,
     onSelectSide: (Side) -> Unit,
+    onSelectMode: (EntryMode) -> Unit,
+    onBottleAmountChange: (Int?) -> Unit,
+    onLogBottle: (time: Instant) -> Unit,
     onAdjustActiveStart: (Instant) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     val currentOnSelectSide by rememberUpdatedState(onSelectSide)
-    val sideSwipeEnabled by rememberUpdatedState(activeFeed == null)
+    // The side-swipe shortcut belongs to breast mode; in bottle mode there is no side to pick.
+    val sideSwipeEnabled by rememberUpdatedState(activeFeed == null && mode == EntryMode.BREAST)
 
     // The scrubbed time, or null to track "now" live until the user adjusts it.
-    // Reset whenever we switch between start-mode and finish-mode.
+    // Reset whenever we switch between start-mode, finish-mode and bottle-mode.
     var pending by remember { mutableStateOf<Instant?>(null) }
-    LaunchedEffect(activeFeed?.id) { pending = null }
+    LaunchedEffect(activeFeed?.id, mode) { pending = null }
 
     val defaultTime = now
     val displayedTime = when {
@@ -93,7 +106,8 @@ fun EntrySurface(
         else -> pending ?: defaultTime
     }
     val activeSide = activeFeed?.side
-    val accent = (activeSide ?: selectedSide).sideColor
+    val bottleMode = activeFeed == null && mode == EntryMode.BOTTLE
+    val accent = if (bottleMode) bottleColor else (activeSide ?: selectedSide).sideColor
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -117,14 +131,22 @@ fun EntrySurface(
         // Clear the floating top bar (brand + action icons) with a gap beneath it.
         Spacer(Modifier.height(76.dp))
         StatusCard(now, activeFeed, latestEndedFeed, onAdjustActiveStart)
+        if (activeFeed == null) {
+            Spacer(Modifier.height(12.dp))
+            ModeToggle(mode = mode, onSelect = onSelectMode)
+        }
 
         HeroTime(
-            label = if (activeFeed != null) "Finish time" else "Start time",
+            label = when {
+                activeFeed != null -> "Finish time"
+                bottleMode -> "Bottle time"
+                else -> "Start time"
+            },
             time = displayedTime,
             onTimeChange = { pending = it },
-            caption = if (activeFeed != null) null else "feeding",
+            caption = if (activeFeed != null) null else if (bottleMode) "logging" else "feeding",
             captionAccent = accent,
-            captionSide = selectedSide,
+            captionDetail = if (bottleMode) "bottle" else selectedSide.label,
             modifier = Modifier.weight(1f),
         )
 
@@ -135,19 +157,114 @@ fun EntrySurface(
                 accent = accent,
             )
             if (activeFeed == null) {
-                SideToggle(selected = selectedSide, onSelect = onSelectSide)
+                if (bottleMode) {
+                    AmountRow(amountMl = bottleAmountMl, onChange = onBottleAmountChange)
+                } else {
+                    SideToggle(selected = selectedSide, onSelect = onSelectSide)
+                }
             }
             Spacer(Modifier.height(2.dp))
             ActionPill(
                 active = activeFeed != null,
                 side = selectedSide,
+                bottle = bottleMode,
                 enabled = canStart || activeFeed != null,
                 onClick = {
-                    if (activeFeed != null) onFinish(displayedTime)
-                    else onStart(selectedSide, displayedTime)
+                    when {
+                        activeFeed != null -> onFinish(displayedTime)
+                        bottleMode -> onLogBottle(displayedTime)
+                        else -> onStart(selectedSide, displayedTime)
+                    }
                 },
             )
         }
+    }
+}
+
+/**
+ * Breast|Bottle picker in SideToggle's visual language, but compact - it selects what the
+ * surface logs, not a value, so it stays quieter than the side/amount controls below.
+ */
+@Composable
+private fun ModeToggle(mode: EntryMode, onSelect: (EntryMode) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ModeButton(
+            label = "BREAST",
+            isSelected = mode == EntryMode.BREAST,
+            accent = MaterialTheme.colorScheme.onSurface,
+            onClick = { onSelect(EntryMode.BREAST) },
+            modifier = Modifier.weight(1f),
+        )
+        ModeButton(
+            label = "BOTTLE",
+            isSelected = mode == EntryMode.BOTTLE,
+            accent = bottleColor,
+            glyph = { BottleGlyph(it) },
+            onClick = { onSelect(EntryMode.BOTTLE) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun ModeButton(
+    label: String,
+    isSelected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    glyph: (@Composable (Color) -> Unit)? = null,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+        contentColor = if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) accent else MaterialTheme.colorScheme.outline,
+        ),
+        modifier = modifier.height(36.dp),
+    ) {
+        Row(
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (glyph != null) {
+                glyph(if (isSelected) accent else MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp,
+            )
+        }
+    }
+}
+
+/** Bottle mode's stand-in for the side toggle: the optional amount, scrub or tap to set. */
+@Composable
+private fun AmountRow(amountMl: Int?, onChange: (Int?) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        CardLabel("Amount")
+        Spacer(Modifier.width(12.dp))
+        ScrubbableAmount(
+            amountMl = amountMl,
+            onChange = onChange,
+            style = MaterialTheme.typography.headlineSmall,
+        )
     }
 }
 
@@ -181,14 +298,23 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
     if (latestEndedFeed == null || end == null) {
         Text("No feeds yet", style = MaterialTheme.typography.headlineSmall)
     } else {
-        val side = latestEndedFeed.side?.let { " · ${it.label}" } ?: ""
+        val isBottle = latestEndedFeed.type == FeedType.bOTTLE
+        val detail = if (isBottle) " · bottle" else latestEndedFeed.side?.let { " · ${it.label}" } ?: ""
         Text(
-            "${formatHoursMinutes(Duration.between(end, now))} ago$side",
+            // Anchored on the feed's start: intervals are measured start-to-start, so
+            // "ago" + the usual every-N-hours rule points straight at the next feed.
+            "${formatHoursMinutes(Duration.between(latestEndedFeed.startTime, now))} ago$detail",
             style = MaterialTheme.typography.headlineMedium,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "${formatClockTime(latestEndedFeed.startTime)} – ${formatClockTime(end)}",
+            // A bottle is a point event - one time (plus the amount), not a degenerate range.
+            if (isBottle) {
+                formatClockTime(latestEndedFeed.startTime) +
+                    (latestEndedFeed.amountMl?.let { " · ${formatAmount(it)}" } ?: "")
+            } else {
+                "${formatClockTime(latestEndedFeed.startTime)} – ${formatClockTime(end)}"
+            },
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -262,7 +388,7 @@ private fun HeroTime(
     onTimeChange: (Instant) -> Unit,
     caption: String?,
     captionAccent: Color,
-    captionSide: Side,
+    captionDetail: String,
     modifier: Modifier = Modifier,
 ) {
     var showType by remember { mutableStateOf(false) }
@@ -292,7 +418,7 @@ private fun HeroTime(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    " ${captionSide.label}",
+                    " ${captionDetail.uppercase()}",
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -314,10 +440,17 @@ private fun HeroTime(
     }
 }
 
-/** Full-width, bottom-anchored primary action. Glows the side colour to start, ember to finish. */
+/**
+ * Full-width, bottom-anchored primary action. Glows the side colour to start, ember to
+ * finish, sage to log a bottle.
+ */
 @Composable
-private fun ActionPill(active: Boolean, side: Side, enabled: Boolean, onClick: () -> Unit) {
-    val color = if (active) MaterialTheme.colorScheme.error else side.sideColor
+private fun ActionPill(active: Boolean, side: Side, bottle: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val color = when {
+        active -> MaterialTheme.colorScheme.error
+        bottle -> bottleColor
+        else -> side.sideColor
+    }
     val content = if (active) MaterialTheme.colorScheme.onError else onSideColor
     Surface(
         onClick = onClick,
@@ -335,12 +468,16 @@ private fun ActionPill(active: Boolean, side: Side, enabled: Boolean, onClick: (
             horizontalArrangement = Arrangement.Center,
         ) {
             Text(
-                if (active) "FINISH" else "START",
+                when {
+                    active -> "FINISH"
+                    bottle -> "LOG BOTTLE"
+                    else -> "START"
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.5.sp,
             )
-            if (!active) {
+            if (!active && !bottle) {
                 Text(
                     "  ·  ${side.label}",
                     style = MaterialTheme.typography.headlineMedium,

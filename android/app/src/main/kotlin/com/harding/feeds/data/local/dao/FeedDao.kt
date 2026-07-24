@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.data.local.SyncState
 import com.harding.feeds.data.local.entity.FeedEntity
 import java.time.Instant
@@ -24,6 +25,12 @@ interface FeedDao {
 
     @Query("SELECT * FROM feeds WHERE syncState != 'PENDING_DELETE' ORDER BY startTime DESC LIMIT 1")
     fun latestFeed(): Flow<FeedEntity?>
+
+    @Query(
+        "SELECT * FROM feeds WHERE syncState != 'PENDING_DELETE' AND type = :type " +
+            "ORDER BY startTime DESC LIMIT 1"
+    )
+    fun latestFeedOfType(type: FeedType): Flow<FeedEntity?>
 
     @Query(
         "SELECT * FROM feeds WHERE syncState != 'PENDING_DELETE' AND endTime IS NOT NULL " +
