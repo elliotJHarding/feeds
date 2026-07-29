@@ -80,8 +80,14 @@ public abstract class IntegrationTest {
 
     /** A persisted breast feed; endTime null means in progress. */
     protected Feed savedFeed(Baby baby, AppUser createdBy, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return savedFeed(baby, createdBy, Feed.Side.L, startTime, endTime);
+    }
+
+    /** A persisted breast feed on a specific side; endTime null means in progress. */
+    protected Feed savedFeed(Baby baby, AppUser createdBy, Feed.Side side,
+                             OffsetDateTime startTime, OffsetDateTime endTime) {
         return feedRepository.save(new Feed(
-                UUID.randomUUID(), baby, Feed.Type.BREAST, Feed.Side.L, null, startTime, endTime, createdBy));
+                UUID.randomUUID(), baby, Feed.Type.BREAST, side, null, startTime, endTime, createdBy));
     }
 
     protected FeedDto breastFeedDto(UUID id, Long babyId, Side side, OffsetDateTime startTime, OffsetDateTime endTime) {

@@ -60,7 +60,14 @@ public class JwtTokenService {
         return new TokenPair(accessToken, refreshToken, jwtProperties.getAccessTokenValidity());
     }
 
-    private String generateAccessToken(AppUser user) {
+    /**
+     * Also minted for Google Home fulfillment calls (GoogleHomeTokenService):
+     * the claims satisfy JwtAuthenticationConverter, so Google's calls ride
+     * the normal resource-server chain. A Google-minted token can therefore
+     * technically call the whole app API - an accepted trade-off for a
+     * single-household deployment over a dedicated audience and filter chain.
+     */
+    public String generateAccessToken(AppUser user) {
         Instant now = Instant.now();
         Instant expiry = now.plus(jwtProperties.getAccessTokenValidity(), ChronoUnit.SECONDS);
 

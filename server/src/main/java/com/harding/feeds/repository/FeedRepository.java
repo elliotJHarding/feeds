@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface FeedRepository extends CrudRepository<Feed, UUID> {
@@ -32,4 +33,13 @@ public interface FeedRepository extends CrudRepository<Feed, UUID> {
                            @Param("from") OffsetDateTime from,
                            @Param("to") OffsetDateTime to,
                            @Param("updatedSince") OffsetDateTime updatedSince);
+
+    /** The in-progress feed, if any (nothing enforces at most one; newest wins). */
+    Optional<Feed> findFirstByBabyAndEndTimeIsNullOrderByStartTimeDesc(Baby baby);
+
+    /** The newest feed of any type, in progress or finished. */
+    Optional<Feed> findFirstByBabyOrderByStartTimeDesc(Baby baby);
+
+    /** The newest feed of a type that has a side recorded (drives next-side alternation). */
+    Optional<Feed> findFirstByBabyAndTypeAndSideIsNotNullOrderByStartTimeDesc(Baby baby, Feed.Type type);
 }

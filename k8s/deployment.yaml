@@ -66,6 +66,29 @@ spec:
               key: private-key
         - name: GOOGLE_CLIENT_ID
           value: 1048273244377-i463uucinv6ntl14s871l79uq1g463q3.apps.googleusercontent.com
+
+        # Google Home cloud-to-cloud integration. The client id and console
+        # project id are identifiers, not credentials (the id is what we hand
+        # Google, the project id appears in the OAuth redirect URI), so they
+        # are plain values; only the client secret lives in the secret.
+        - name: GOOGLEHOME_CLIENT_ID
+          value: feeds-google-home
+        # The Home Developer Console project is backed by the same GCP project
+        # as sign-in (feeds-502719), so one project carries the OAuth clients,
+        # the HomeGraph API, and the report-state service account.
+        - name: GOOGLEHOME_PROJECT_ID
+          value: feeds-502719
+        - name: GOOGLEHOME_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: feeds-app-secret
+              key: googlehome-client-secret
+        # Service-account key JSON for Report State (HomeGraph API).
+        - name: GOOGLEHOME_SA_KEY
+          valueFrom:
+            secretKeyRef:
+              name: feeds-app-secret
+              key: googlehome-sa-key
         ports:
         - containerPort: 8080
         # Probe paths assume the meals convention: servlet context path /api

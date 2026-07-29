@@ -61,6 +61,11 @@ poll that relies on `updatedSince` alone.
 API surface is small — auth, feeds, babies, and family-group/invite. Read `openapi.yaml` for
 the exact operations rather than relying on a list here.
 
+One deliberate exception to contract-first: the server's `/googlehome/**` endpoints (OAuth
+account linking + smart home fulfillment, package `com.harding.feeds.googlehome`). Their
+shapes are fixed by Google's cloud-to-cloud protocol and consumed by Google, not the Android
+client, so they are hand-written controllers outside `openapi.yaml`.
+
 ## Server — build, run, test
 
 From `server/`:

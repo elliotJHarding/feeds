@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Link Feeds to Google Home</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            margin: 0;
+            gap: 1.5rem;
+            text-align: center;
+            padding: 1rem;
+        }
+        #error { color: #b00020; max-width: 24rem; }
+        #working { display: none; }
+    </style>
+</head>
+<body>
+<h1>Link Feeds</h1>
+<p>Sign in with the Google account you use in the Feeds app.</p>
+
+<div id="g_id_onload"
+     data-client_id="__GIS_CLIENT_ID__"
+     data-callback="onCredential"
+     data-auto_select="false"></div>
+<div class="g_id_signin" data-type="standard" data-size="large"></div>
+
+<p id="working">Linking&hellip;</p>
+<p id="error"></p>
+
+<script>
+    function onCredential(response) {
+        document.getElementById('working').style.display = 'block';
+        document.getElementById('error').textContent = '';
+
+        const params = new URLSearchParams(location.search);
+        fetch(location.pathname + '/consent', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                credential: response.credential,
+                clientId: params.get('client_id'),
+                redirectUri: params.get('redirect_uri'),
+                state: params.get('state')
+            })
+        }).then(async res => {
+            const body = await res.json();
+            if (res.ok) {
+                location.assign(body.redirectUrl);
+            } else {
+                document.getElementById('working').style.display = 'none';
+                document.getElementById('error').textContent =
+                    body.error || 'Linking failed. Please try again.';
+            }
+        }).catch(() => {
+            document.getElementById('working').style.display = 'none';
+            document.getElementById('error').textContent = 'Linking failed. Please try again.';
+        });
+    }
+</script>
+<script src="https://accounts.google.com/gsi/client" async></script>
+</body>
+</html>

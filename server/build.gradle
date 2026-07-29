@@ -31,6 +31,9 @@ dependencies {
     // needed for sign-in; the meals offline-access machinery is deliberately not ported.
     implementation 'com.google.api-client:google-api-client:1.33.0'
 
+    // Service-account credentials for Google Home Report State (HomeGraph API).
+    implementation 'com.google.auth:google-auth-library-oauth2-http:1.30.1'
+
     runtimeOnly 'org.postgresql:postgresql'
     runtimeOnly 'com.h2database:h2'
 

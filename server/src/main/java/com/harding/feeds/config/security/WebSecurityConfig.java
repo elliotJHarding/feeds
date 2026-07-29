@@ -35,7 +35,13 @@ public class WebSecurityConfig {
                 "/auth/login",
                 "/auth/refresh",
                 "/error",
-                "/actuator/health/**"
+                "/actuator/health/**",
+                // Google Home account linking: the sign-in page authenticates via
+                // its Google credential, the token endpoint via client id/secret.
+                // Fulfillment is NOT here - it needs a Bearer token (order-2 chain).
+                "/googlehome/auth",
+                "/googlehome/auth/consent",
+                "/googlehome/auth/token"
             )
             .authorizeHttpRequests(authorize -> authorize.anyRequest().permitAll())
             .csrf(AbstractHttpConfigurer::disable)

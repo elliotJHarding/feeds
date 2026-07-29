@@ -29,7 +29,13 @@ public class Feed {
 
     public enum Type { BREAST, BOTTLE }
 
-    public enum Side { L, R }
+    public enum Side {
+        L, R;
+
+        public Side opposite() {
+            return this == L ? R : L;
+        }
+    }
 
     /** Client-generated UUID, stored verbatim. */
     @Id

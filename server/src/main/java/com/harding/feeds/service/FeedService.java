@@ -5,6 +5,7 @@ import com.harding.feeds.entity.Baby;
 import com.harding.feeds.entity.Feed;
 import com.harding.feeds.repository.BabyRepository;
 import com.harding.feeds.repository.FeedRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,17 +19,21 @@ import static com.harding.feeds.service.GroupScope.requireInGroup;
 
 /**
  * Feed CRUD, group-scoped: every operation resolves the target baby/feed and
- * verifies it belongs to the caller's family group before touching it.
+ * verifies it belongs to the caller's family group before touching it. Every
+ * mutation publishes a {@link FeedChangedEvent}.
  */
 @Service
 public class FeedService {
 
     private final FeedRepository feedRepository;
     private final BabyRepository babyRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public FeedService(FeedRepository feedRepository, BabyRepository babyRepository) {
+    public FeedService(FeedRepository feedRepository, BabyRepository babyRepository,
+                       ApplicationEventPublisher eventPublisher) {
         this.feedRepository = feedRepository;
         this.babyRepository = babyRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -54,8 +59,9 @@ public class FeedService {
         }
 
         Baby baby = scopedBaby(user, babyId);
-        Feed feed = new Feed(id, baby, type, side, amountMl, startTime, endTime, user);
-        return new Creation(feedRepository.save(feed), true);
+        Feed feed = feedRepository.save(new Feed(id, baby, type, side, amountMl, startTime, endTime, user));
+        eventPublisher.publishEvent(new FeedChangedEvent(baby));
+        return new Creation(feed, true);
     }
 
     /** Full replacement of the editable fields. Any group member may update any feed. */
@@ -71,12 +77,62 @@ public class FeedService {
         feed.setStartTime(startTime);
         feed.setEndTime(endTime);
 
-        return feedRepository.save(feed);
+        Feed saved = feedRepository.save(feed);
+        eventPublisher.publishEvent(new FeedChangedEvent(saved.getBaby()));
+        return saved;
     }
 
     @Transactional
     public void delete(AppUser user, UUID id) {
-        feedRepository.delete(scopedFeed(user, id));
+        Feed feed = scopedFeed(user, id);
+        feedRepository.delete(feed);
+        eventPublisher.publishEvent(new FeedChangedEvent(feed.getBaby()));
+    }
+
+    /**
+     * Starts a breast feed now, on the given side or the computed next side:
+     * the opposite of the latest breast feed's side, else L. Mirrors the
+     * Android client's ToggleFeedUseCase.defaultNextSide() - keep the two in
+     * step. Returns empty when a feed is already in progress (nothing is
+     * created); the id is server-generated, which is safe because creates are
+     * idempotent by id and clients reconcile by range refetch.
+     */
+    @Transactional
+    public Optional<Feed> startVoiceFeed(AppUser user, Long babyId, Feed.Side sideOverride) {
+        Baby baby = scopedBaby(user, babyId);
+        if (feedRepository.findFirstByBabyAndEndTimeIsNullOrderByStartTimeDesc(baby).isPresent()) {
+            return Optional.empty();
+        }
+
+        Feed.Side side = sideOverride != null ? sideOverride : nextSide(baby);
+        Feed feed = feedRepository.save(new Feed(UUID.randomUUID(), baby, Feed.Type.BREAST, side, null,
+                OffsetDateTime.now(), null, user));
+        eventPublisher.publishEvent(new FeedChangedEvent(baby));
+        return Optional.of(feed);
+    }
+
+    /**
+     * Ends the in-progress feed now. Returns the stopped feed, or empty when
+     * nothing is in progress.
+     */
+    @Transactional
+    public Optional<Feed> stopVoiceFeed(AppUser user, Long babyId) {
+        Baby baby = scopedBaby(user, babyId);
+        return feedRepository.findFirstByBabyAndEndTimeIsNullOrderByStartTimeDesc(baby)
+                .map(feed -> {
+                    OffsetDateTime now = OffsetDateTime.now();
+                    feed.setEndTime(now.isBefore(feed.getStartTime()) ? feed.getStartTime() : now);
+                    Feed saved = feedRepository.save(feed);
+                    eventPublisher.publishEvent(new FeedChangedEvent(baby));
+                    return saved;
+                });
+    }
+
+    private Feed.Side nextSide(Baby baby) {
+        return feedRepository
+                .findFirstByBabyAndTypeAndSideIsNotNullOrderByStartTimeDesc(baby, Feed.Type.BREAST)
+                .map(feed -> feed.getSide().opposite())
+                .orElse(Feed.Side.L);
     }
 
     private Feed scopedFeed(AppUser user, UUID id) {
