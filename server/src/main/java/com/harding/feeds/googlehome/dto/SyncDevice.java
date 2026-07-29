@@ -12,6 +12,6 @@ public record SyncDevice(
         boolean willReportState,
         Map<String, Object> attributes) {
 
-    public record Name(String name) {
+    public record Name(String name, List<String> nicknames) {
     }
 }

@@ -78,23 +78,28 @@ public class GoogleHomeFulfillmentService {
         attributes.put("pausable", false);
         attributes.put("availableZones", List.of("left", "right"));
         attributes.put("availableModes", List.of(
-                mode(MODE_SIDE, List.of("side"), List.of(
-                        setting("left", List.of("left")),
-                        setting("right", List.of("right")))),
-                mode(MODE_LAST_FEED, List.of("last feed", "time since last feed"), List.of(
-                        setting("right_now", List.of("right now", "in progress")),
+                mode(MODE_SIDE, List.of("side", "feeding side", "last side", "breast side"), List.of(
+                        setting("left", List.of("left", "the left", "left side")),
+                        setting("right", List.of("right", "the right", "right side")))),
+                mode(MODE_LAST_FEED,
+                        List.of("last feed", "time since last feed", "last fed",
+                                "last feeding", "feed recency"),
+                        List.of(
+                        setting("right_now", List.of("right now", "in progress", "happening now")),
                         setting("just_now", List.of("just now", "less than half an hour ago")),
-                        setting("under_an_hour", List.of("under an hour ago")),
-                        setting("one_to_two_hours", List.of("one to two hours ago")),
-                        setting("two_to_four_hours", List.of("two to four hours ago")),
-                        setting("over_four_hours", List.of("over four hours ago"))))));
+                        setting("under_an_hour", List.of("under an hour ago", "less than an hour ago")),
+                        setting("one_to_two_hours", List.of("one to two hours ago", "over an hour ago")),
+                        setting("two_to_four_hours", List.of("two to four hours ago", "a few hours ago")),
+                        setting("over_four_hours", List.of("over four hours ago", "more than four hours ago"))))));
         attributes.put("queryOnlyModes", true);
 
         return new SyncDevice(
                 String.valueOf(baby.getId()),
                 DEVICE_TYPE,
                 List.of(TRAIT_START_STOP, TRAIT_MODES),
-                new SyncDevice.Name(baby.getName() + " feed"),
+                new SyncDevice.Name(
+                        baby.getName() + " feed",
+                        List.of("the feed", baby.getName() + "'s feed", "feed tracker")),
                 true,
                 attributes);
     }
