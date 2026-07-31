@@ -10,6 +10,8 @@ import com.harding.feeds.googlehome.dto.FulfillmentResponse;
 import com.harding.feeds.googlehome.dto.SyncDevice;
 import com.harding.feeds.service.BabyService;
 import com.harding.feeds.service.FeedService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -52,8 +54,13 @@ public class GoogleHomeFulfillmentService {
         this.tokenService = tokenService;
     }
 
+    private static final Logger log = LoggerFactory.getLogger(GoogleHomeFulfillmentService.class);
+
     public FulfillmentResponse handle(AppUser user, FulfillmentRequest request) {
         FulfillmentRequest.Input input = request.inputs().get(0);
+        // One line per intent: at household scale this is the cheapest way to
+        // see whether the assistant actually QUERYs us when asked about state.
+        log.info("Fulfillment {} for {} payload={}", input.intent(), user.getEmail(), input.payload());
         Object payload = switch (input.intent()) {
             case "action.devices.SYNC" -> sync(user);
             case "action.devices.QUERY" -> query(user, input.payload());
