@@ -64,7 +64,8 @@ the exact operations rather than relying on a list here.
 One deliberate exception to contract-first: the server's `/googlehome/**` endpoints (OAuth
 account linking + smart home fulfillment, package `com.harding.feeds.googlehome`). Their
 shapes are fixed by Google's cloud-to-cloud protocol and consumed by Google, not the Android
-client, so they are hand-written controllers outside `openapi.yaml`.
+client, so they are hand-written controllers outside `openapi.yaml`. Design, live status,
+configuration record, and diagnostics for that integration are in `GOOGLEHOME.md`.
 
 ## Server — build, run, test
 
