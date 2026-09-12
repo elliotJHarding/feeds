@@ -15,6 +15,7 @@ import com.harding.feeds.domain.ActiveEventUseCase
 import com.harding.feeds.sync.ForegroundSync
 import com.harding.feeds.sync.SyncEngine
 import com.harding.feeds.sync.SyncScheduler
+import com.harding.feeds.ui.theme.ThemeStore
 import com.harding.feeds.widget.QuickEntryNotifier
 
 /**
@@ -29,6 +30,16 @@ class AppContainer(context: Context) {
 
     private val apiFactory = ApiFactory(BuildConfig.API_BASE_URL, tokenStore)
     private val quickEntryNotifier = QuickEntryNotifier(context)
+
+    /**
+     * Built here, and eagerly, rather than from an activity. The widget reaches this container
+     * straight off the Application, so it can render after a process restart with no activity
+     * alive. The constructor loads the saved palette, so the widget is never painted in the
+     * default theme by accident.
+     *
+     * A theme change repaints the widget through the same hook a new feed uses.
+     */
+    val themeStore = ThemeStore(context, quickEntryNotifier::quickEntryChanged)
 
     val syncEngine = SyncEngine(
         feedsApi = apiFactory.feedsApi,

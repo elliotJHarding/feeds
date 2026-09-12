@@ -2,6 +2,8 @@ package com.harding.feeds.ui
 
 import androidx.compose.ui.graphics.Color
 import com.harding.feeds.client.models.Side
+import com.harding.feeds.ui.theme.ThemeState
+import com.harding.feeds.ui.theme.onColorFor
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -48,28 +50,34 @@ fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
 val Side.label: String get() = value
 
 /**
- * A fixed colour per side so L/R read at a glance without parsing the letter. Left = moonlight,
- * right = candle amber; both are warm-friendly and hold contrast on the warm-ink ground.
- * [onSideColor] is the text/icon colour to place on top of [sideColor].
+ * The four event accents, taken from the palette the parent picked. Each reads at a glance
+ * without parsing a letter: L and R differ, a bottle is neither, and a nap is none of them.
+ *
+ * These read `ThemeState.palette`, which is snapshot state. Compose records the read during
+ * composition and during draw, so every one of these call sites repaints when the theme
+ * changes. None of them needs to know that. See the note on
+ * [com.harding.feeds.ui.theme.ThemeState] for why this is global state and not a
+ * `CompositionLocal`.
+ *
+ * A palette keeps its four event accents apart in hue, so a nap row never reads as a side. The
+ * theme editor measures that and warns when a hand-made theme breaks it.
  */
-val Side.sideColor: Color get() = if (this == Side.l) Color(0xFF82AED2) else Color(0xFFE6A45C)
+val Side.sideColor: Color
+    get() = if (this == Side.l) ThemeState.palette.left else ThemeState.palette.right
 
-/** Warm-dark foreground - both side colours are light enough that near-black reads cleanly. */
-val onSideColor: Color get() = Color(0xFF17110C)
+val bottleColor: Color get() = ThemeState.palette.bottle
+
+val napColor: Color get() = ThemeState.palette.nap
 
 /**
- * Bottle feeds get their own accent - a soft sage, hue-distinct from both side colours so
- * bottle rows and marks never read as a breast side. Light enough that [onSideColor] holds.
+ * The text or glyph colour to place on top of an accent.
+ *
+ * This used to be one fixed near-black, which worked only because every accent the app shipped
+ * was light. A parent can now pick a dark accent, and a fixed dark glyph on it would be
+ * invisible. [com.harding.feeds.ui.theme.onColorFor] measures the contrast both ways and picks
+ * the readable one.
  */
-val bottleColor: Color get() = Color(0xFF9CBF8E)
-
-/**
- * Naps get a soft lavender - hue-distinct from left moonlight (~205 deg), right candle amber
- * (~32 deg), bottle sage (~105 deg) and the ember used for stop actions (~8 deg), so a nap row
- * never reads as a side or as a warning. It says night without saying either breast. Light
- * enough that [onSideColor] holds contrast for a glyph on top.
- */
-val napColor: Color get() = Color(0xFFBFA8D9)
+fun onAccent(accent: Color): Color = onColorFor(accent, ThemeState.palette)
 
 fun formatAmount(ml: Int): String = "$ml ml"
 

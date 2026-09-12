@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.harding.feeds.client.models.Side
-import com.harding.feeds.ui.onSideColor
+import com.harding.feeds.ui.onAccent
 import com.harding.feeds.ui.sideColor
 
 /**
@@ -54,7 +54,8 @@ private fun SideButton(
         onClick = { onSelect(side) },
         shape = RoundedCornerShape(14.dp),
         color = if (isSelected) side.sideColor else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (isSelected) onSideColor else MaterialTheme.colorScheme.onSurfaceVariant,
+        contentColor = if (isSelected) onAccent(side.sideColor)
+        else MaterialTheme.colorScheme.onSurfaceVariant,
         border = if (isSelected) BorderStroke(1.dp, side.sideColor)
         else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = modifier.height(52.dp),

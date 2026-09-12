@@ -54,7 +54,7 @@ import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.napColor
-import com.harding.feeds.ui.onSideColor
+import com.harding.feeds.ui.onAccent
 import com.harding.feeds.ui.sideColor
 import com.harding.feeds.ui.toLocalTime
 import java.time.Duration
@@ -621,7 +621,6 @@ private sealed interface PillAction {
  */
 @Composable
 private fun ActionPill(action: PillAction, enabled: Boolean, onClick: () -> Unit) {
-    val ending = action is PillAction.FinishFeed || action is PillAction.Wake
     val color = when (action) {
         is PillAction.FinishFeed, is PillAction.Wake -> MaterialTheme.colorScheme.error
         is PillAction.LogBottle -> bottleColor
@@ -641,7 +640,8 @@ private fun ActionPill(action: PillAction, enabled: Boolean, onClick: () -> Unit
         enabled = enabled,
         shape = RoundedCornerShape(20.dp),
         color = color,
-        contentColor = if (ending) MaterialTheme.colorScheme.onError else onSideColor,
+        // The pill's own ground decides its text, so a dark custom accent still reads.
+        contentColor = onAccent(color),
         modifier = Modifier
             .fillMaxWidth()
             .height(72.dp),

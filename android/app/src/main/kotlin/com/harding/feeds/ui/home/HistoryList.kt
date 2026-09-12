@@ -42,7 +42,7 @@ import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.napColor
-import com.harding.feeds.ui.onSideColor
+import com.harding.feeds.ui.onAccent
 import com.harding.feeds.ui.sideColor
 import java.time.Duration
 import java.time.LocalDate
@@ -273,7 +273,7 @@ private fun NapCard(nap: NapEntity, onNapTap: (NapEntity) -> Unit) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.size(26.dp).clip(CircleShape).background(napColor),
             ) {
-                MoonGlyph(onSideColor)
+                MoonGlyph(onAccent(napColor))
             }
             Spacer(Modifier.width(12.dp))
 
@@ -356,27 +356,24 @@ private fun FeedRow(feed: FeedEntity, onTap: () -> Unit) {
             .padding(horizontal = 14.dp, vertical = 4.dp),
     ) {
         val side = feed.side
+        val chip = when {
+            isBottle -> bottleColor
+            side != null -> side.sideColor
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        }
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(26.dp)
-                .clip(CircleShape)
-                .background(
-                    when {
-                        isBottle -> bottleColor
-                        side != null -> side.sideColor
-                        else -> MaterialTheme.colorScheme.surfaceVariant
-                    }
-                ),
+            modifier = Modifier.size(26.dp).clip(CircleShape).background(chip),
         ) {
             if (isBottle) {
-                BottleGlyph(onSideColor)
+                BottleGlyph(onAccent(chip))
             } else {
                 Text(
                     side?.label ?: "·",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = if (side != null) onSideColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (side != null) onAccent(chip)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

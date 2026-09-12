@@ -42,7 +42,12 @@ import com.harding.feeds.domain.ActiveEvent
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.napColor
+import com.harding.feeds.ui.onAccent
 import com.harding.feeds.ui.sideColor
+import com.harding.feeds.ui.theme.ThemeState
+import com.harding.feeds.ui.theme.dimForeground
+import com.harding.feeds.ui.theme.foreground
+import com.harding.feeds.ui.theme.raisedSurface
 import java.time.Instant
 import kotlinx.coroutines.flow.first
 
@@ -125,13 +130,38 @@ class StartNapAction : ActionCallback {
     }
 }
 
+/**
+ * The widget's colours, taken from the palette the parent picked in the app.
+ *
+ * Read inside the composition and never held as a file-level `val`. A top-level `val` is
+ * initialised once when the class loads, so it would freeze whichever theme the process happened
+ * to see first and never follow a change.
+ */
+private data class WidgetColors(
+    val ground: ColorProvider,
+    val text: ColorProvider,
+    val dim: ColorProvider,
+    val stop: Color,
+)
+
+private fun widgetColors(): WidgetColors {
+    val palette = ThemeState.palette
+    return WidgetColors(
+        ground = ColorProvider(palette.raisedSurface),
+        text = ColorProvider(palette.foreground),
+        dim = ColorProvider(palette.dimForeground),
+        stop = palette.stop,
+    )
+}
+
 @Composable
 private fun WidgetContent(state: WidgetState) {
+    val colors = widgetColors()
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(Ink)
+            .background(colors.ground)
             .cornerRadius(22.dp)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
@@ -140,6 +170,7 @@ private fun WidgetContent(state: WidgetState) {
                 Info(
                     label = "FEEDS",
                     value = "Open to set up",
+                    colors = colors,
                     modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<MainActivity>()),
                 )
 
@@ -147,6 +178,7 @@ private fun WidgetContent(state: WidgetState) {
                 Info(
                     label = "LAST FEED",
                     value = lastFeedText(state.lastEnded),
+                    colors = colors,
                     modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
                 Spacer(GlanceModifier.width(10.dp))
@@ -164,20 +196,22 @@ private fun WidgetContent(state: WidgetState) {
                 Info(
                     label = "FEEDING",
                     value = "${side}since ${formatClockTime(state.startTime)}",
+                    colors = colors,
                     modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
                 Spacer(GlanceModifier.width(10.dp))
-                ActionChip("Stop", Ember)
+                ActionChip("Stop", colors.stop)
             }
 
             is WidgetState.Napping -> {
                 Info(
                     label = "NAPPING",
                     value = "since ${formatClockTime(state.startTime)}",
+                    colors = colors,
                     modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
                 )
                 Spacer(GlanceModifier.width(10.dp))
-                ActionChip("Wake", Ember)
+                ActionChip("Wake", colors.stop)
             }
         }
     }
@@ -185,14 +219,19 @@ private fun WidgetContent(state: WidgetState) {
 
 /** The glance value on the left: a quiet label over a bold reading; taps open the app. */
 @Composable
-private fun Info(label: String, value: String, modifier: GlanceModifier = GlanceModifier) {
+private fun Info(
+    label: String,
+    value: String,
+    colors: WidgetColors,
+    modifier: GlanceModifier = GlanceModifier,
+) {
     Column(modifier = modifier) {
-        Text(label, style = TextStyle(color = Dim, fontSize = 10.sp, fontWeight = FontWeight.Medium))
+        Text(label, style = TextStyle(color = colors.dim, fontSize = 10.sp, fontWeight = FontWeight.Medium))
         Spacer(GlanceModifier.height(2.dp))
         Text(
             value,
             maxLines = 1,
-            style = TextStyle(color = TextHi, fontSize = 17.sp, fontWeight = FontWeight.Bold),
+            style = TextStyle(color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold),
         )
     }
 }
@@ -207,7 +246,11 @@ private fun ActionChip(
     Text(
         text = text,
         maxLines = 1,
-        style = TextStyle(color = OnAccent, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+        style = TextStyle(
+            color = ColorProvider(onAccent(color)),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        ),
         modifier = GlanceModifier
             .background(ColorProvider(color))
             .cornerRadius(16.dp)
@@ -218,12 +261,6 @@ private fun ActionChip(
 
 /** Three cells or more. Below this the reading plus one chip already fills the row. */
 private val WideEnoughForNap = 160.dp
-
-private val Ink = ColorProvider(Color(0xFF1A1410))
-private val TextHi = ColorProvider(Color(0xFFF3E9DD))
-private val Dim = ColorProvider(Color(0xFFA89384))
-private val OnAccent = ColorProvider(Color(0xFF17110C))
-private val Ember = Color(0xFFCF7367)
 
 private fun lastFeedText(lastEnded: FeedEntity?): String {
     if (lastEnded?.endTime == null) return "No feeds yet"
