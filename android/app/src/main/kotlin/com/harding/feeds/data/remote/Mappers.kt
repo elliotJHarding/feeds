@@ -3,9 +3,11 @@ package com.harding.feeds.data.remote
 import com.harding.feeds.client.models.AppUserDto
 import com.harding.feeds.client.models.BabyDto
 import com.harding.feeds.client.models.FeedDto
+import com.harding.feeds.client.models.NapDto
 import com.harding.feeds.data.local.SyncState
 import com.harding.feeds.data.local.entity.BabyEntity
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.data.local.entity.UserEntity
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -30,6 +32,24 @@ fun FeedDto.toEntity(): FeedEntity = FeedEntity(
     type = type,
     side = side,
     amountMl = amountMl,
+    startTime = startTime.toInstant(),
+    endTime = endTime?.toInstant(),
+    createdBy = createdBy,
+    createdAt = createdAt?.toInstant(),
+    updatedAt = updatedAt?.toInstant(),
+    syncState = SyncState.SYNCED,
+)
+
+fun NapEntity.toDto(): NapDto = NapDto(
+    id = UUID.fromString(id),
+    babyId = babyId,
+    startTime = startTime.toOffset(),
+    endTime = endTime?.toOffset(),
+)
+
+fun NapDto.toEntity(): NapEntity = NapEntity(
+    id = id.toString(),
+    babyId = babyId,
     startTime = startTime.toInstant(),
     endTime = endTime?.toInstant(),
     createdBy = createdBy,

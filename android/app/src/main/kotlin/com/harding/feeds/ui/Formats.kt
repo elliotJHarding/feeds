@@ -63,6 +63,14 @@ val onSideColor: Color get() = Color(0xFF17110C)
  */
 val bottleColor: Color get() = Color(0xFF9CBF8E)
 
+/**
+ * Naps get a soft lavender - hue-distinct from left moonlight (~205 deg), right candle amber
+ * (~32 deg), bottle sage (~105 deg) and the ember used for stop actions (~8 deg), so a nap row
+ * never reads as a side or as a warning. It says night without saying either breast. Light
+ * enough that [onSideColor] holds contrast for a glyph on top.
+ */
+val napColor: Color get() = Color(0xFFBFA8D9)
+
 fun formatAmount(ml: Int): String = "$ml ml"
 
 /** Accepts "14:32", "1432", "9:05", "905". */

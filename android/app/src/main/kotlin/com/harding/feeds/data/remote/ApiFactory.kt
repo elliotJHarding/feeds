@@ -8,6 +8,7 @@ import com.harding.feeds.client.apis.AuthenticationApi
 import com.harding.feeds.client.apis.BabiesApi
 import com.harding.feeds.client.apis.FamilyGroupApi
 import com.harding.feeds.client.apis.FeedsApi
+import com.harding.feeds.client.apis.NapsApi
 import com.harding.feeds.client.infrastructure.Serializer
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -53,6 +54,7 @@ class ApiFactory(baseUrl: String, tokenStore: TokenStore) {
     )
 
     val feedsApi: FeedsApi = authenticatedRetrofit.create(FeedsApi::class.java)
+    val napsApi: NapsApi = authenticatedRetrofit.create(NapsApi::class.java)
     val babiesApi: BabiesApi = authenticatedRetrofit.create(BabiesApi::class.java)
     val familyGroupApi: FamilyGroupApi = authenticatedRetrofit.create(FamilyGroupApi::class.java)
 }

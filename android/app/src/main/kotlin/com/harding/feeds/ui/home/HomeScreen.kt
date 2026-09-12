@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.CircularProgressIndicator
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.data.local.entity.NapEntity
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -71,15 +73,19 @@ import kotlinx.coroutines.launch
 fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
     val now by rememberNow()
     val baby by vm.baby.collectAsStateWithLifecycle()
-    val activeFeed by vm.activeFeed.collectAsStateWithLifecycle()
+    val activeEvent by vm.activeEvent.collectAsStateWithLifecycle()
     val latestEnded by vm.latestEndedFeed.collectAsStateWithLifecycle()
+    val latestEndedNap by vm.latestEndedNap.collectAsStateWithLifecycle()
     val selectedSide by vm.selectedSide.collectAsStateWithLifecycle()
     val entryMode by vm.entryMode.collectAsStateWithLifecycle()
     val bottleAmount by vm.bottleAmount.collectAsStateWithLifecycle()
     val history by vm.history.collectAsStateWithLifecycle()
+    val historyFilter by vm.historyFilter.collectAsStateWithLifecycle()
 
-    var editingFeed by remember { mutableStateOf<FeedEntity?>(null) }
+    var editing by remember { mutableStateOf<EditTarget?>(null) }
     var showInvite by remember { mutableStateOf(false) }
+
+    val visibleDays = remember(history, historyFilter) { history.filtered(historyFilter) }
 
     val scope = rememberCoroutineScope()
     val scaffoldState = rememberBottomSheetScaffoldState()
@@ -89,10 +95,19 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
         scaffoldState = scaffoldState,
         sheetPeekHeight = PeekHeight,
         sheetContent = {
-            HistoryList(
-                days = history,
-                onFeedTap = { editingFeed = it },
-            )
+            // The filter is pinned outside the LazyColumn, at the sheet's bottom edge: with the
+            // sheet expanded that puts it in the thumb arc, matching the one-thumb design of
+            // the entry surface above.
+            Column(Modifier.fillMaxSize()) {
+                HistoryList(
+                    days = visibleDays,
+                    filter = historyFilter,
+                    onFeedTap = { editing = EditTarget.Feed(it) },
+                    onNapTap = { editing = EditTarget.Nap(it) },
+                    modifier = Modifier.weight(1f),
+                )
+                HistoryFilterBar(selected = historyFilter, onSelect = vm::selectHistoryFilter)
+            }
         },
     ) { padding ->
         Box(
@@ -115,14 +130,16 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
         ) {
             EntrySurface(
                 now = now,
-                activeFeed = activeFeed,
+                activeEvent = activeEvent,
                 latestEndedFeed = latestEnded,
+                latestEndedNap = latestEndedNap,
                 selectedSide = selectedSide,
                 canStart = baby != null,
                 mode = entryMode,
                 bottleAmountMl = bottleAmount,
                 onStart = vm::startFeed,
-                onFinish = vm::finishFeed,
+                onStartNap = vm::startNap,
+                onFinish = vm::finishActive,
                 onSelectSide = vm::selectSide,
                 onSelectMode = vm::selectMode,
                 onBottleAmountChange = vm::setBottleAmount,
@@ -140,19 +157,34 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
         }
     }
 
-    editingFeed?.let { feed ->
-        FeedEditSheet(
-            feed = feed,
+    when (val target = editing) {
+        is EditTarget.Feed -> FeedEditSheet(
+            feed = target.feed,
             onSave = { side, start, end, amountMl ->
-                vm.saveFeed(feed, side, start, end, amountMl)
-                editingFeed = null
+                vm.saveFeed(target.feed, side, start, end, amountMl)
+                editing = null
             },
             onDelete = {
-                vm.deleteFeed(feed.id)
-                editingFeed = null
+                vm.deleteFeed(target.feed.id)
+                editing = null
             },
-            onDismiss = { editingFeed = null },
+            onDismiss = { editing = null },
         )
+
+        is EditTarget.Nap -> NapEditSheet(
+            nap = target.nap,
+            onSave = { start, end ->
+                vm.saveNap(target.nap, start, end)
+                editing = null
+            },
+            onDelete = {
+                vm.deleteNap(target.nap.id)
+                editing = null
+            },
+            onDismiss = { editing = null },
+        )
+
+        null -> Unit
     }
 
     if (showInvite) {
@@ -161,6 +193,53 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
             onRegenerate = vm::regenerateInviteCode,
             onDismiss = { showInvite = false },
         )
+    }
+}
+
+/** One sheet open at a time, whichever kind of record was tapped. */
+private sealed interface EditTarget {
+    data class Feed(val feed: FeedEntity) : EditTarget
+    data class Nap(val nap: NapEntity) : EditTarget
+}
+
+/**
+ * Feeds | Both | Naps. "How long since the last feed" and "how long since the last nap" are
+ * answered on the entry card; this narrows the list when one rhythm is what you want to read.
+ */
+@Composable
+private fun HistoryFilterBar(selected: HistoryFilter, onSelect: (HistoryFilter) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            HistoryFilter.entries.forEach { filter ->
+                val isSelected = filter == selected
+                Surface(
+                    onClick = { onSelect(filter) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
+                    contentColor = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline,
+                    ),
+                    modifier = Modifier.weight(1f).height(36.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            filter.name.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

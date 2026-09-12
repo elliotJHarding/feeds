@@ -11,16 +11,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Pushes fresh state to the OS quick-entry surfaces. Wired as the feed-write hook of
- * [com.harding.feeds.data.repository.FeedRepository] and the post-sync hook of
- * [com.harding.feeds.sync.SyncEngine], so both local writes and feeds arriving from the
+ * Pushes fresh state to the OS quick-entry surfaces. Wired as the write hook of
+ * [com.harding.feeds.data.repository.FeedRepository] and
+ * [com.harding.feeds.data.repository.NapRepository], and as the post-sync hook of
+ * [com.harding.feeds.sync.SyncEngine], so both local writes and records arriving from the
  * other phone show up on the widget without waiting for the periodic refresh.
  */
 class QuickEntryNotifier(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    fun feedsChanged() {
+    fun quickEntryChanged() {
         scope.launch { refreshNow() }
         // No-op unless the tile is added and currently listening (shade open); the tile
         // re-reads Room in onStartListening anyway. Guarded because some OS versions throw

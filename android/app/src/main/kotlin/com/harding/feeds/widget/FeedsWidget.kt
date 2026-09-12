@@ -3,15 +3,19 @@ package com.harding.feeds.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
+import androidx.glance.LocalSize
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.cornerRadius
@@ -34,21 +38,33 @@ import com.harding.feeds.MainActivity
 import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.domain.ActiveEvent
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.label
+import com.harding.feeds.ui.napColor
 import com.harding.feeds.ui.sideColor
 import java.time.Instant
 import kotlinx.coroutines.flow.first
 
 /**
- * Home-screen quick entry, sized to a single 2x1 cell: one glance-value plus one action. Renders
- * a snapshot read straight from Room (works offline, no app launch), refreshed by
- * [QuickEntryNotifier] after every feed write and after each sync. The glance-value is an
- * absolute clock time (last feed's time, or the in-progress start), so it stays correct however
- * long since the last render - no ticking needed. Tapping the value opens the app; tapping the
- * chip starts/stops via the shared use case.
+ * Home-screen quick entry: one glance-value plus one action, in a single 2x1 cell. Renders a
+ * snapshot read straight from Room (works offline, no app launch), refreshed by
+ * [QuickEntryNotifier] after every write and after each sync. The glance-value is an absolute
+ * clock time (last feed's time, or the in-progress start), so it stays correct however long
+ * since the last render - no ticking needed. Tapping the value opens the app; tapping the chip
+ * starts/stops via the shared use case.
+ *
+ * Whatever is running owns the single glance-value, naps included, and the chip ends it. At 2
+ * cells that leaves no room to *start* a nap - two chips plus the reading need roughly 190dp
+ * and a 2-cell widget gives about 110-140dp - so a nap chip appears only when the user stretches
+ * the widget wider. The default size is unchanged, so no placed widget moves on upgrade.
  */
 class FeedsWidget : GlanceAppWidget() {
+
+    // Two cells renders exactly what shipped before; three or more adds the nap chip.
+    override val sizeMode = SizeMode.Responsive(
+        setOf(DpSize(110.dp, 50.dp), DpSize(180.dp, 50.dp))
+    )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val state = loadState(context)
@@ -61,17 +77,16 @@ class FeedsWidget : GlanceAppWidget() {
 
     private suspend fun loadState(context: Context): WidgetState {
         val container = (context.applicationContext as FeedsApplication).container
-        val feedDao = container.database.feedDao()
         if (container.database.babyDao().ids().isEmpty()) return WidgetState.NotSetUp
 
-        val active = feedDao.activeFeed().first()
-        if (active != null) {
-            return WidgetState.Feeding(active.side, active.startTime)
+        return when (val active = container.activeEvent.activeEvent().first()) {
+            is ActiveEvent.Feeding -> WidgetState.Feeding(active.feed.side, active.startTime)
+            is ActiveEvent.Napping -> WidgetState.Napping(active.startTime)
+            null -> WidgetState.Idle(
+                lastEnded = container.database.feedDao().latestEndedFeed().first(),
+                nextSide = container.activeEvent.defaultNextSide().first(),
+            )
         }
-        return WidgetState.Idle(
-            lastEnded = feedDao.latestEndedFeed().first(),
-            nextSide = container.toggleFeed.defaultNextSide().first(),
-        )
     }
 }
 
@@ -79,16 +94,33 @@ private sealed interface WidgetState {
     data object NotSetUp : WidgetState
     data class Idle(val lastEnded: FeedEntity?, val nextSide: Side) : WidgetState
     data class Feeding(val side: Side?, val startTime: Instant) : WidgetState
+    data class Napping(val startTime: Instant) : WidgetState
 }
 
-/** One tap on the chip starts/stops via the same use-case as the in-app button. */
+/**
+ * One tap on the chip ends whatever is running, or starts a feed when nothing is.
+ *
+ * Do not rename this class. Glance serialises the ActionCallback's class name into the
+ * RemoteViews the launcher holds, so a rename leaves already-placed widgets pointing at a class
+ * the new APK does not have, until the host re-renders.
+ */
 class ToggleFeedAction : ActionCallback {
 
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val container = (context.applicationContext as FeedsApplication).container
-        container.toggleFeed.toggle()
+        container.activeEvent.toggle()
         // The write hook re-renders every widget asynchronously; updating this one directly
         // as well makes the tap feedback immediate.
+        FeedsWidget().update(context, glanceId)
+    }
+}
+
+/** Starts a nap from the wider layout, which is the only one with room for a second chip. */
+class StartNapAction : ActionCallback {
+
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val container = (context.applicationContext as FeedsApplication).container
+        container.activeEvent.startNap(java.time.Instant.now())
         FeedsWidget().update(context, glanceId)
     }
 }
@@ -119,6 +151,12 @@ private fun WidgetContent(state: WidgetState) {
                 )
                 Spacer(GlanceModifier.width(10.dp))
                 ActionChip("Start ${state.nextSide.label}", state.nextSide.sideColor)
+                // Only the wider layout has room for a second chip; at 2 cells a nap starts
+                // from the app instead.
+                if (LocalSize.current.width >= WideEnoughForNap) {
+                    Spacer(GlanceModifier.width(8.dp))
+                    ActionChip("Nap", napColor, actionRunCallback<StartNapAction>())
+                }
             }
 
             is WidgetState.Feeding -> {
@@ -130,6 +168,16 @@ private fun WidgetContent(state: WidgetState) {
                 )
                 Spacer(GlanceModifier.width(10.dp))
                 ActionChip("Stop", Ember)
+            }
+
+            is WidgetState.Napping -> {
+                Info(
+                    label = "NAPPING",
+                    value = "since ${formatClockTime(state.startTime)}",
+                    modifier = GlanceModifier.defaultWeight().clickable(actionStartActivity<MainActivity>()),
+                )
+                Spacer(GlanceModifier.width(10.dp))
+                ActionChip("Wake", Ember)
             }
         }
     }
@@ -149,9 +197,13 @@ private fun Info(label: String, value: String, modifier: GlanceModifier = Glance
     }
 }
 
-/** The one action, tinted the colour it drives - the side to start, or ember to stop. */
+/** An action, tinted the colour it drives - the side to start, nap lavender, or ember to end. */
 @Composable
-private fun ActionChip(text: String, color: Color) {
+private fun ActionChip(
+    text: String,
+    color: Color,
+    action: Action = actionRunCallback<ToggleFeedAction>(),
+) {
     Text(
         text = text,
         maxLines = 1,
@@ -160,9 +212,12 @@ private fun ActionChip(text: String, color: Color) {
             .background(ColorProvider(color))
             .cornerRadius(16.dp)
             .padding(horizontal = 16.dp, vertical = 10.dp)
-            .clickable(actionRunCallback<ToggleFeedAction>()),
+            .clickable(action),
     )
 }
+
+/** Three cells or more. Below this the reading plus one chip already fills the row. */
+private val WideEnoughForNap = 160.dp
 
 private val Ink = ColorProvider(Color(0xFF1A1410))
 private val TextHi = ColorProvider(Color(0xFFF3E9DD))

@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.di.AppContainer
-import com.harding.feeds.domain.ToggleFeedUseCase
+import com.harding.feeds.domain.ActiveEvent
+import com.harding.feeds.domain.ActiveEventUseCase
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -22,34 +24,38 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class DayFeeds(val date: LocalDate, val feeds: List<FeedEntity>)
-
-/** What the entry surface is set up to log. Breast is primary; bottle is a one-shot detour. */
-enum class EntryMode { BREAST, BOTTLE }
+/** What the entry surface is set up to log. Breast is primary; bottle and nap are detours. */
+enum class EntryMode { BREAST, BOTTLE, NAP }
 
 /** Entry surface + history, backed entirely by Room flows (sync keeps them fresh). */
 class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     private val feedRepository = container.feedRepository
-    private val toggleFeed = container.toggleFeed
+    private val napRepository = container.napRepository
+    private val activeEventUseCase = container.activeEvent
     private val zone = ZoneId.systemDefault()
 
     val baby = container.babyRepository.babies()
         .map { it.firstOrNull() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val activeFeed = feedRepository.activeFeed()
+    /** Whatever is in progress, feed or nap - at most one at a time. */
+    val activeEvent = activeEventUseCase.activeEvent()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val latestEndedFeed = feedRepository.latestEndedFeed()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val latestEndedNap = napRepository.latestEndedNap()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Explicit user choice before starting; cleared when the feed starts. */
     private val sideOverride = MutableStateFlow<Side?>(null)
 
     /**
-     * Plain view state, never persisted - the app always opens in breast mode, and a feed
-     * starting (locally or via a partner's sync) forces the surface back to breast.
+     * Plain view state, never persisted - the app always opens in breast mode, and an event
+     * starting (locally or via a partner's sync) forces the surface back to breast. Breast is
+     * the right landing place after either kind of event ends: a waking baby usually feeds.
      */
     private val entryModeState = MutableStateFlow(EntryMode.BREAST)
     val entryMode: StateFlow<EntryMode> = entryModeState
@@ -57,9 +63,12 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private val bottleAmountState = MutableStateFlow<Int?>(null)
     val bottleAmount: StateFlow<Int?> = bottleAmountState
 
+    private val historyFilterState = MutableStateFlow(HistoryFilter.BOTH)
+    val historyFilter: StateFlow<HistoryFilter> = historyFilterState
+
     init {
         viewModelScope.launch {
-            activeFeed.collect { if (it != null) entryModeState.value = EntryMode.BREAST }
+            activeEvent.collect { if (it != null) entryModeState.value = EntryMode.BREAST }
         }
     }
 
@@ -68,46 +77,55 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
      * user's explicit pick, else the use-case default (opposite of the last feed's side).
      */
     val selectedSide: StateFlow<Side> =
-        combine(activeFeed, toggleFeed.defaultNextSide(), sideOverride) { active, default, override ->
-            active?.side ?: override ?: default
+        combine(activeEvent, activeEventUseCase.defaultNextSide(), sideOverride) { active, default, override ->
+            (active as? ActiveEvent.Feeding)?.feed?.side ?: override ?: default
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Side.l)
 
-    val history: StateFlow<List<DayFeeds>> = feedRepository
-        .feedsBetween(
-            from = LocalDate.now(zone).minusDays(HISTORY_DAYS).atStartOfDay(zone).toInstant(),
-            to = Instant.now().plus(Duration.ofDays(2)),
-        )
-        .map { feeds ->
-            feeds.groupBy { it.startTime.atZone(zone).toLocalDate() }
-                .map { (date, dayFeeds) -> DayFeeds(date, dayFeeds) }
-                .sortedByDescending { it.date }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /**
+     * The day-grouped timeline, built off both Room streams. The interleave runs here rather
+     * than in the list composable: it is a pure function, so it is testable without Compose
+     * test infrastructure this project does not carry, and it recomputes per Room emission
+     * instead of per frame.
+     */
+    val history: StateFlow<List<DayHistory>> = run {
+        val from = LocalDate.now(zone).minusDays(HISTORY_DAYS).atStartOfDay(zone).toInstant()
+        val to = Instant.now().plus(Duration.ofDays(2))
+        combine(
+            feedRepository.feedsBetween(from, to),
+            napRepository.napsBetween(from, to),
+        ) { feeds, naps -> buildDayHistory(feeds, naps, zone) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
 
     var inviteCode by mutableStateOf<InviteCodeState>(InviteCodeState.Loading)
         private set
 
     /**
-     * Tap or swipe before a feed: picks the side to log. Ignored while a feed is in progress -
+     * Tap or swipe before an event: picks the side to log. Ignored while one is in progress -
      * an accidental swipe used to silently rewrite the active feed's side; corrections go
      * through the history sheet's edit instead.
      */
     fun selectSide(side: Side) {
-        if (activeFeed.value == null) sideOverride.value = side
+        if (activeEvent.value == null) sideOverride.value = side
     }
 
     /** Start an in-progress feed at the time scrubbed on the entry surface. */
     fun startFeed(side: Side, startTime: Instant) {
         viewModelScope.launch {
-            if (toggleFeed.start(side, startTime) is ToggleFeedUseCase.Result.Started) {
+            if (activeEventUseCase.startFeed(side, startTime) is ActiveEventUseCase.Result.StartedFeed) {
                 sideOverride.value = null
             }
         }
     }
 
-    /** Finish the active feed at the time scrubbed on the entry surface. */
-    fun finishFeed(endTime: Instant) {
-        viewModelScope.launch { toggleFeed.finish(endTime) }
+    /** Start an in-progress nap at the time scrubbed on the entry surface. */
+    fun startNap(startTime: Instant) {
+        viewModelScope.launch { activeEventUseCase.startNap(startTime) }
+    }
+
+    /** Finish whatever is active, at the time scrubbed on the entry surface. */
+    fun finishActive(endTime: Instant) {
+        viewModelScope.launch { activeEventUseCase.finish(endTime) }
     }
 
     /** Switching into bottle mode seeds the amount from the last bottle logged (window: history). */
@@ -122,10 +140,16 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         bottleAmountState.value = amountMl
     }
 
+    fun selectHistoryFilter(filter: HistoryFilter) {
+        historyFilterState.value = filter
+    }
+
     /** Log a bottle as a completed point event at the scrubbed time; one-shot back to breast. */
     fun logBottle(time: Instant) {
         viewModelScope.launch {
-            if (toggleFeed.logBottle(bottleAmountState.value, time) is ToggleFeedUseCase.Result.LoggedBottle) {
+            if (activeEventUseCase.logBottle(bottleAmountState.value, time)
+                is ActiveEventUseCase.Result.LoggedBottle
+            ) {
                 entryModeState.value = EntryMode.BREAST
             }
         }
@@ -137,16 +161,27 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         .firstOrNull { it.type == FeedType.bOTTLE && it.amountMl != null }
         ?.amountMl
 
+    /** Corrects the start of the running event - a parent often realises it began earlier. */
     fun adjustActiveStart(newStart: Instant) {
-        val active = activeFeed.value ?: return
+        val start = newStart.coerceAtMost(Instant.now())
         viewModelScope.launch {
-            feedRepository.updateFeed(
-                id = active.id,
-                side = active.side,
-                startTime = newStart.coerceAtMost(Instant.now()),
-                endTime = null,
-                amountMl = active.amountMl,
-            )
+            when (val active = activeEvent.value) {
+                is ActiveEvent.Feeding -> feedRepository.updateFeed(
+                    id = active.feed.id,
+                    side = active.feed.side,
+                    startTime = start,
+                    endTime = null,
+                    amountMl = active.feed.amountMl,
+                )
+
+                is ActiveEvent.Napping -> napRepository.updateNap(
+                    id = active.nap.id,
+                    startTime = start,
+                    endTime = null,
+                )
+
+                null -> Unit
+            }
         }
     }
 
@@ -158,6 +193,14 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     fun deleteFeed(id: String) {
         viewModelScope.launch { feedRepository.deleteFeed(id) }
+    }
+
+    fun saveNap(nap: NapEntity, startTime: Instant, endTime: Instant?) {
+        viewModelScope.launch { napRepository.updateNap(nap.id, startTime, endTime) }
+    }
+
+    fun deleteNap(id: String) {
+        viewModelScope.launch { napRepository.deleteNap(id) }
     }
 
     /** The group's stable current code, shown when the invite view opens. */

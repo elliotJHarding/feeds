@@ -10,7 +10,8 @@ import com.harding.feeds.data.remote.ApiFactory
 import com.harding.feeds.data.repository.BabyRepository
 import com.harding.feeds.data.repository.FeedRepository
 import com.harding.feeds.data.repository.GroupRepository
-import com.harding.feeds.domain.ToggleFeedUseCase
+import com.harding.feeds.data.repository.NapRepository
+import com.harding.feeds.domain.ActiveEventUseCase
 import com.harding.feeds.sync.ForegroundSync
 import com.harding.feeds.sync.SyncEngine
 import com.harding.feeds.sync.SyncScheduler
@@ -18,8 +19,8 @@ import com.harding.feeds.widget.QuickEntryNotifier
 
 /**
  * Manual DI: the whole graph fits in one screen, so a container beats Hilt here - no extra
- * plugins or processors, and the Glance widget / QS tile (later stages) reach it straight
- * off the Application.
+ * plugins or processors, and the Glance widget / QS tile reach it straight off the
+ * Application.
  */
 class AppContainer(context: Context) {
 
@@ -31,19 +32,25 @@ class AppContainer(context: Context) {
 
     val syncEngine = SyncEngine(
         feedsApi = apiFactory.feedsApi,
+        napsApi = apiFactory.napsApi,
         babiesApi = apiFactory.babiesApi,
         feedDao = database.feedDao(),
+        napDao = database.napDao(),
         babyDao = database.babyDao(),
         syncCursorDao = database.syncCursorDao(),
+        napSyncCursorDao = database.napSyncCursorDao(),
         tokenStore = tokenStore,
-        onFeedsChanged = quickEntryNotifier::feedsChanged,
+        onDataChanged = quickEntryNotifier::quickEntryChanged,
     )
 
     val syncScheduler = SyncScheduler(context)
     val foregroundSync = ForegroundSync(syncEngine)
 
-    val feedRepository = FeedRepository(database.feedDao(), syncScheduler, quickEntryNotifier::feedsChanged)
-    val toggleFeed = ToggleFeedUseCase(feedRepository, database.babyDao())
+    val feedRepository =
+        FeedRepository(database.feedDao(), syncScheduler, quickEntryNotifier::quickEntryChanged)
+    val napRepository =
+        NapRepository(database.napDao(), syncScheduler, quickEntryNotifier::quickEntryChanged)
+    val activeEvent = ActiveEventUseCase(feedRepository, napRepository, database.babyDao())
     val babyRepository = BabyRepository(database.babyDao(), apiFactory.babiesApi)
     val groupRepository = GroupRepository(apiFactory.familyGroupApi, database.sessionDao())
     val authRepository = AuthRepository(

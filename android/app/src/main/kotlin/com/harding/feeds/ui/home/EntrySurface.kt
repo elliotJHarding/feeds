@@ -40,7 +40,10 @@ import androidx.compose.ui.unit.sp
 import com.harding.feeds.client.models.FeedType
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.entity.FeedEntity
+import com.harding.feeds.data.local.entity.NapEntity
+import com.harding.feeds.domain.ActiveEvent
 import com.harding.feeds.ui.components.BottleGlyph
+import com.harding.feeds.ui.components.MoonGlyph
 import com.harding.feeds.ui.components.ScrubbableAmount
 import com.harding.feeds.ui.components.SideToggle
 import com.harding.feeds.ui.components.TimeRuler
@@ -50,6 +53,7 @@ import com.harding.feeds.ui.formatAmount
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
 import com.harding.feeds.ui.label
+import com.harding.feeds.ui.napColor
 import com.harding.feeds.ui.onSideColor
 import com.harding.feeds.ui.sideColor
 import com.harding.feeds.ui.toLocalTime
@@ -74,13 +78,15 @@ import kotlin.math.abs
 @Composable
 fun EntrySurface(
     now: Instant,
-    activeFeed: FeedEntity?,
+    activeEvent: ActiveEvent?,
     latestEndedFeed: FeedEntity?,
+    latestEndedNap: NapEntity?,
     selectedSide: Side,
     canStart: Boolean,
     mode: EntryMode,
     bottleAmountMl: Int?,
     onStart: (side: Side, startTime: Instant) -> Unit,
+    onStartNap: (startTime: Instant) -> Unit,
     onFinish: (endTime: Instant) -> Unit,
     onSelectSide: (Side) -> Unit,
     onSelectMode: (EntryMode) -> Unit,
@@ -92,22 +98,28 @@ fun EntrySurface(
     val haptics = LocalHapticFeedback.current
     val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     val currentOnSelectSide by rememberUpdatedState(onSelectSide)
-    // The side-swipe shortcut belongs to breast mode; in bottle mode there is no side to pick.
-    val sideSwipeEnabled by rememberUpdatedState(activeFeed == null && mode == EntryMode.BREAST)
+    // The side-swipe shortcut belongs to breast mode; bottle and nap have no side to pick.
+    val sideSwipeEnabled by rememberUpdatedState(activeEvent == null && mode == EntryMode.BREAST)
 
     // The scrubbed time, or null to track "now" live until the user adjusts it.
-    // Reset whenever we switch between start-mode, finish-mode and bottle-mode.
+    // Reset whenever we switch between start-mode, finish-mode, bottle-mode and nap-mode.
     var pending by remember { mutableStateOf<Instant?>(null) }
-    LaunchedEffect(activeFeed?.id, mode) { pending = null }
+    LaunchedEffect(activeEvent, mode) { pending = null }
 
     val defaultTime = now
     val displayedTime = when {
-        activeFeed != null -> pending ?: maxOf(defaultTime, activeFeed.startTime)
+        activeEvent != null -> pending ?: maxOf(defaultTime, activeEvent.startTime)
         else -> pending ?: defaultTime
     }
-    val activeSide = activeFeed?.side
-    val bottleMode = activeFeed == null && mode == EntryMode.BOTTLE
-    val accent = if (bottleMode) bottleColor else (activeSide ?: selectedSide).sideColor
+    val activeFeed = (activeEvent as? ActiveEvent.Feeding)?.feed
+    val napRunning = activeEvent is ActiveEvent.Napping
+    val bottleMode = activeEvent == null && mode == EntryMode.BOTTLE
+    val napMode = activeEvent == null && mode == EntryMode.NAP
+    val accent = when {
+        napMode || napRunning -> napColor
+        bottleMode -> bottleColor
+        else -> (activeFeed?.side ?: selectedSide).sideColor
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -130,23 +142,33 @@ fun EntrySurface(
     ) {
         // Clear the floating top bar (brand + action icons) with a gap beneath it.
         Spacer(Modifier.height(76.dp))
-        StatusCard(now, activeFeed, latestEndedFeed, onAdjustActiveStart)
-        if (activeFeed == null) {
+        StatusCard(now, activeEvent, latestEndedFeed, latestEndedNap, onAdjustActiveStart)
+        if (activeEvent == null) {
             Spacer(Modifier.height(12.dp))
             ModeToggle(mode = mode, onSelect = onSelectMode)
         }
 
         HeroTime(
             label = when {
-                activeFeed != null -> "Finish time"
+                napRunning -> "Wake time"
+                activeEvent != null -> "Finish time"
+                napMode -> "Nap start"
                 bottleMode -> "Bottle time"
                 else -> "Start time"
             },
             time = displayedTime,
             onTimeChange = { pending = it },
-            caption = if (activeFeed != null) null else if (bottleMode) "logging" else "feeding",
+            caption = when {
+                activeEvent != null -> null
+                bottleMode || napMode -> "logging"
+                else -> "feeding"
+            },
             captionAccent = accent,
-            captionDetail = if (bottleMode) "bottle" else selectedSide.label,
+            captionDetail = when {
+                napMode -> "nap"
+                bottleMode -> "bottle"
+                else -> selectedSide.label
+            },
             modifier = Modifier.weight(1f),
         )
 
@@ -156,24 +178,32 @@ fun EntrySurface(
                 onTimeChange = { pending = it },
                 accent = accent,
             )
-            if (activeFeed == null) {
-                if (bottleMode) {
-                    AmountRow(amountMl = bottleAmountMl, onChange = onBottleAmountChange)
-                } else {
-                    SideToggle(selected = selectedSide, onSelect = onSelectSide)
+            if (activeEvent == null) {
+                when {
+                    bottleMode -> AmountRow(amountMl = bottleAmountMl, onChange = onBottleAmountChange)
+                    // A nap has neither a side nor an amount. The empty slot keeps its height
+                    // so the action pill does not jump when the mode changes.
+                    napMode -> Spacer(Modifier.height(52.dp))
+                    else -> SideToggle(selected = selectedSide, onSelect = onSelectSide)
                 }
             }
             Spacer(Modifier.height(2.dp))
+            val action = when {
+                napRunning -> PillAction.Wake
+                activeEvent != null -> PillAction.FinishFeed
+                napMode -> PillAction.StartNap
+                bottleMode -> PillAction.LogBottle
+                else -> PillAction.StartFeed(selectedSide)
+            }
             ActionPill(
-                active = activeFeed != null,
-                side = selectedSide,
-                bottle = bottleMode,
-                enabled = canStart || activeFeed != null,
+                action = action,
+                enabled = canStart || activeEvent != null,
                 onClick = {
-                    when {
-                        activeFeed != null -> onFinish(displayedTime)
-                        bottleMode -> onLogBottle(displayedTime)
-                        else -> onStart(selectedSide, displayedTime)
+                    when (action) {
+                        is PillAction.Wake, is PillAction.FinishFeed -> onFinish(displayedTime)
+                        is PillAction.StartNap -> onStartNap(displayedTime)
+                        is PillAction.LogBottle -> onLogBottle(displayedTime)
+                        is PillAction.StartFeed -> onStart(action.side, displayedTime)
                     }
                 },
             )
@@ -182,14 +212,18 @@ fun EntrySurface(
 }
 
 /**
- * Breast|Bottle picker in SideToggle's visual language, but compact - it selects what the
+ * Breast|Bottle|Nap picker in SideToggle's visual language, but compact - it selects what the
  * surface logs, not a value, so it stays quieter than the side/amount controls below.
+ *
+ * Nap is a button rather than a gesture because the horizontal axis is already spoken for: the
+ * surface owns the side swipe, the ruler consumes its own drags, and the sheet owns the
+ * vertical. A long-press would be undiscoverable at 3am.
  */
 @Composable
 private fun ModeToggle(mode: EntryMode, onSelect: (EntryMode) -> Unit) {
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ModeButton(
             label = "BREAST",
@@ -204,6 +238,14 @@ private fun ModeToggle(mode: EntryMode, onSelect: (EntryMode) -> Unit) {
             accent = bottleColor,
             glyph = { BottleGlyph(it) },
             onClick = { onSelect(EntryMode.BOTTLE) },
+            modifier = Modifier.weight(1f),
+        )
+        ModeButton(
+            label = "NAP",
+            isSelected = mode == EntryMode.NAP,
+            accent = napColor,
+            glyph = { MoonGlyph(it) },
+            onClick = { onSelect(EntryMode.NAP) },
             modifier = Modifier.weight(1f),
         )
     }
@@ -269,14 +311,24 @@ private fun AmountRow(amountMl: Int?, onChange: (Int?) -> Unit) {
 }
 
 /**
- * The top card: before a feed it shows how long ago the last one was; during one it shows the
- * live state with started-time and elapsed carrying equal weight to the fact a feed is running.
+ * The top card, always two blocks: whatever is running (or the last feed) above, and the other
+ * kind's last completed record below.
+ *
+ * "How long since the last feed" and "how long since the last nap" are separate questions - due
+ * to feed, versus overtired - and a parent needs both answers at once, at 3am, without changing
+ * mode. Showing one or the other could not do that.
+ *
+ * The two blocks stack rather than sitting side by side. The card's inner width is about 280dp
+ * on a 360dp screen, so a column would get roughly 134dp, and "2h 10m ago · L" needs about
+ * 200dp at headlineMedium. Fitting it into a column would force the feed reading down to
+ * titleMedium, gutting the reading SPEC.md calls the prominent one.
  */
 @Composable
 private fun StatusCard(
     now: Instant,
-    activeFeed: FeedEntity?,
+    activeEvent: ActiveEvent?,
     latestEndedFeed: FeedEntity?,
+    latestEndedNap: NapEntity?,
     onAdjustActiveStart: (Instant) -> Unit,
 ) {
     Surface(
@@ -285,11 +337,43 @@ private fun StatusCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            if (activeFeed != null) InProgressContent(now, activeFeed, onAdjustActiveStart)
-            else LastFeedContent(now, latestEndedFeed)
+            when (activeEvent) {
+                is ActiveEvent.Feeding -> {
+                    InProgressContent(
+                        label = "In progress",
+                        sideStat = activeEvent.feed.side,
+                        now = now,
+                        startTime = activeEvent.startTime,
+                        onAdjustActiveStart = onAdjustActiveStart,
+                    )
+                    BlockSpacer()
+                    LastNapContent(now, latestEndedNap)
+                }
+
+                is ActiveEvent.Napping -> {
+                    InProgressContent(
+                        label = "Napping",
+                        sideStat = null,
+                        now = now,
+                        startTime = activeEvent.startTime,
+                        onAdjustActiveStart = onAdjustActiveStart,
+                    )
+                    BlockSpacer()
+                    LastFeedContent(now, latestEndedFeed)
+                }
+
+                null -> {
+                    LastFeedContent(now, latestEndedFeed)
+                    BlockSpacer()
+                    LastNapContent(now, latestEndedNap)
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun BlockSpacer() = Spacer(Modifier.height(14.dp))
 
 @Composable
 private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
@@ -299,6 +383,8 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
         Text("No feeds yet", style = MaterialTheme.typography.headlineSmall)
     } else {
         val isBottle = latestEndedFeed.type == FeedType.bOTTLE
+        // The side stays on the "ago" line, welded to the feed reading it belongs to. It is a
+        // feed attribute, never a peer of the nap block below.
         val detail = if (isBottle) " · bottle" else latestEndedFeed.side?.let { " · ${it.label}" } ?: ""
         Text(
             // Anchored on the feed's start: intervals are measured start-to-start, so
@@ -321,38 +407,67 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
     }
 }
 
+/** The nap half of the pair. A nap has no side and no amount, so it is simply shorter. */
+@Composable
+private fun LastNapContent(now: Instant, latestEndedNap: NapEntity?) {
+    CardLabel("Last nap")
+    val end = latestEndedNap?.endTime
+    if (latestEndedNap == null || end == null) {
+        Text("No naps yet", style = MaterialTheme.typography.headlineSmall)
+    } else {
+        Text(
+            // Anchored on the nap's END, unlike the feed block above. The useful number here is
+            // how long the baby has been awake, which is what an overtired window works from;
+            // feeds measure start-to-start because that is how feeding frequency works.
+            "${formatHoursMinutes(Duration.between(end, now))} ago",
+            style = MaterialTheme.typography.headlineMedium,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "${formatClockTime(latestEndedNap.startTime)} – ${formatClockTime(end)}",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The live block. A feed carries a third stat for the side; a nap has none, so it drops that
+ * column rather than printing a dash where a value should be.
+ */
 @Composable
 private fun InProgressContent(
+    label: String,
+    sideStat: Side?,
     now: Instant,
-    activeFeed: FeedEntity,
+    startTime: Instant,
     onAdjustActiveStart: (Instant) -> Unit,
 ) {
     var editStart by remember { mutableStateOf(false) }
-    val side = activeFeed.side
-    CardLabel("In progress")
+    CardLabel(label)
     Spacer(Modifier.height(10.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Stat("Feeding", side?.label ?: "—", side?.sideColor ?: MaterialTheme.colorScheme.onSurface)
+        if (sideStat != null) Stat("Feeding", sideStat.label, sideStat.sideColor)
         Stat(
             "Started",
-            formatClockTime(activeFeed.startTime),
+            formatClockTime(startTime),
             MaterialTheme.colorScheme.onSurface,
             onClick = { editStart = true },
         )
         Stat(
             "Elapsed",
-            formatHoursMinutes(Duration.between(activeFeed.startTime, now)),
+            formatHoursMinutes(Duration.between(startTime, now)),
             MaterialTheme.colorScheme.onSurface,
         )
     }
 
     if (editStart) {
         TypeTimeDialog(
-            initialText = activeFeed.startTime.toLocalTime().format(com.harding.feeds.ui.TIME_FORMAT),
+            initialText = startTime.toLocalTime().format(com.harding.feeds.ui.TIME_FORMAT),
             onDismiss = { editStart = false },
             onConfirm = { typed ->
                 editStart = false
-                onAdjustActiveStart(activeFeed.startTime.atZone(ZoneId.systemDefault()).with(typed).toInstant())
+                onAdjustActiveStart(startTime.atZone(ZoneId.systemDefault()).with(typed).toInstant())
             },
         )
     }
@@ -441,23 +556,45 @@ private fun HeroTime(
 }
 
 /**
- * Full-width, bottom-anchored primary action. Glows the side colour to start, ember to
- * finish, sage to log a bottle.
+ * What the big button will do. A closed set rather than a pair of booleans, so a future event
+ * type is a compile error here instead of falling through to "start a feed".
+ */
+private sealed interface PillAction {
+    data class StartFeed(val side: Side) : PillAction
+    data object LogBottle : PillAction
+    data object StartNap : PillAction
+    data object FinishFeed : PillAction
+    data object Wake : PillAction
+}
+
+/**
+ * Full-width, bottom-anchored primary action. Glows the side colour to start a feed, sage for
+ * a bottle, lavender for a nap, and ember to end whatever is running - on this surface and on
+ * the widget, ember already means "end the running thing".
  */
 @Composable
-private fun ActionPill(active: Boolean, side: Side, bottle: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    val color = when {
-        active -> MaterialTheme.colorScheme.error
-        bottle -> bottleColor
-        else -> side.sideColor
+private fun ActionPill(action: PillAction, enabled: Boolean, onClick: () -> Unit) {
+    val ending = action is PillAction.FinishFeed || action is PillAction.Wake
+    val color = when (action) {
+        is PillAction.FinishFeed, is PillAction.Wake -> MaterialTheme.colorScheme.error
+        is PillAction.LogBottle -> bottleColor
+        is PillAction.StartNap -> napColor
+        is PillAction.StartFeed -> action.side.sideColor
     }
-    val content = if (active) MaterialTheme.colorScheme.onError else onSideColor
+    val label = when (action) {
+        is PillAction.FinishFeed -> "FINISH"
+        // One word, like FINISH, and the hero label above it already reads "Wake time".
+        is PillAction.Wake -> "WAKE"
+        is PillAction.LogBottle -> "LOG BOTTLE"
+        is PillAction.StartNap -> "START NAP"
+        is PillAction.StartFeed -> "START"
+    }
     Surface(
         onClick = onClick,
         enabled = enabled,
         shape = RoundedCornerShape(20.dp),
         color = color,
-        contentColor = content,
+        contentColor = if (ending) MaterialTheme.colorScheme.onError else onSideColor,
         modifier = Modifier
             .fillMaxWidth()
             .height(72.dp),
@@ -468,18 +605,14 @@ private fun ActionPill(active: Boolean, side: Side, bottle: Boolean, enabled: Bo
             horizontalArrangement = Arrangement.Center,
         ) {
             Text(
-                when {
-                    active -> "FINISH"
-                    bottle -> "LOG BOTTLE"
-                    else -> "START"
-                },
+                label,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.5.sp,
             )
-            if (!active && !bottle) {
+            if (action is PillAction.StartFeed) {
                 Text(
-                    "  ·  ${side.label}",
+                    "  ·  ${action.side.label}",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )

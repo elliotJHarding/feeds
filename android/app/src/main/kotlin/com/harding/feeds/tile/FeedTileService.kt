@@ -4,6 +4,7 @@ import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.harding.feeds.FeedsApplication
+import com.harding.feeds.domain.ActiveEvent
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.label
 import kotlinx.coroutines.CoroutineScope
@@ -14,9 +15,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
- * Start/stop from the pull-down shade, through the same [com.harding.feeds.domain.ToggleFeedUseCase]
- * as the in-app button and the widget. State is read from Room on every onStartListening
- * (the shade opening), so the tile needs no push updates to be correct when seen.
+ * Start/stop from the pull-down shade, through the same
+ * [com.harding.feeds.domain.ActiveEventUseCase] as the in-app button and the widget. State is
+ * read from Room on every onStartListening (the shade opening), so the tile needs no push
+ * updates to be correct when seen.
+ *
+ * The tile starts feeds only - it has one action and no type picker - but it stops whatever is
+ * running, naps included. The label always names which of the two a tap will do, so the tile
+ * can never say "Start feed" and then silently end a nap.
  */
 class FeedTileService : TileService() {
 
@@ -38,7 +44,7 @@ class FeedTileService : TileService() {
 
     override fun onClick() {
         listeningScope?.launch {
-            container.toggleFeed.toggle()
+            container.activeEvent.toggle()
             refreshTile()
         }
     }
@@ -52,16 +58,27 @@ class FeedTileService : TileService() {
             tile.label = "Feeds"
             tile.setSubtitleCompat("Set up in app")
         } else {
-            val active = database.feedDao().activeFeed().first()
-            if (active != null) {
-                val since = "since ${formatClockTime(active.startTime)}"
-                tile.state = Tile.STATE_ACTIVE
-                tile.label = "Stop feed"
-                tile.setSubtitleCompat(listOfNotNull(active.side?.label, since).joinToString(" · "))
-            } else {
-                tile.state = Tile.STATE_INACTIVE
-                tile.label = "Start feed"
-                tile.setSubtitleCompat("${container.toggleFeed.defaultNextSide().first().label} next")
+            when (val active = container.activeEvent.activeEvent().first()) {
+                is ActiveEvent.Feeding -> {
+                    val since = "since ${formatClockTime(active.startTime)}"
+                    tile.state = Tile.STATE_ACTIVE
+                    tile.label = "Stop feed"
+                    tile.setSubtitleCompat(
+                        listOfNotNull(active.feed.side?.label, since).joinToString(" · ")
+                    )
+                }
+
+                is ActiveEvent.Napping -> {
+                    tile.state = Tile.STATE_ACTIVE
+                    tile.label = "Stop nap"
+                    tile.setSubtitleCompat("since ${formatClockTime(active.startTime)}")
+                }
+
+                null -> {
+                    tile.state = Tile.STATE_INACTIVE
+                    tile.label = "Start feed"
+                    tile.setSubtitleCompat("${container.activeEvent.defaultNextSide().first().label} next")
+                }
             }
         }
         tile.updateTile()
