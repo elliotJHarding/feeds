@@ -140,8 +140,9 @@ fun EntrySurface(
             }
             .padding(horizontal = 20.dp),
     ) {
-        // Clear the floating top bar (brand + action icons) with a gap beneath it.
-        Spacer(Modifier.height(76.dp))
+        // Clear the floating top bar (brand + action icons) with a gap beneath it. The bar is
+        // a 44dp button row plus 8dp padding, so this only needs to clear that.
+        Spacer(Modifier.height(60.dp))
         StatusCard(now, activeEvent, latestEndedFeed, latestEndedNap, onAdjustActiveStart)
         if (activeEvent == null) {
             Spacer(Modifier.height(12.dp))
@@ -336,7 +337,7 @@ private fun StatusCard(
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
             when (activeEvent) {
                 is ActiveEvent.Feeding -> {
                     InProgressContent(
@@ -373,7 +374,7 @@ private fun StatusCard(
 }
 
 @Composable
-private fun BlockSpacer() = Spacer(Modifier.height(14.dp))
+private fun BlockSpacer() = Spacer(Modifier.height(10.dp))
 
 @Composable
 private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
@@ -390,7 +391,7 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
             // Anchored on the feed's start: intervals are measured start-to-start, so
             // "ago" + the usual every-N-hours rule points straight at the next feed.
             "${formatHoursMinutes(Duration.between(latestEndedFeed.startTime, now))} ago$detail",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -401,7 +402,7 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
             } else {
                 "${formatClockTime(latestEndedFeed.startTime)} – ${formatClockTime(end)}"
             },
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -420,12 +421,12 @@ private fun LastNapContent(now: Instant, latestEndedNap: NapEntity?) {
             // how long the baby has been awake, which is what an overtired window works from;
             // feeds measure start-to-start because that is how feeding frequency works.
             "${formatHoursMinutes(Duration.between(end, now))} ago",
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "${formatClockTime(latestEndedNap.startTime)} – ${formatClockTime(end)}",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -513,17 +514,22 @@ private fun HeroTime(
         modifier = modifier.fillMaxWidth(),
     ) {
         CardLabel(label)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             time.toLocalTime().format(com.harding.feeds.ui.TIME_FORMAT),
-            style = MaterialTheme.typography.displayLarge,
+            // displayMedium (45sp), not displayLarge (57sp). The status card now carries two
+            // anchors, so the surface had two elements competing to be the hero and the screen
+            // read as crowded. The clock is still unmistakably the largest thing; it just stops
+            // shouting. Note the size is fixed - the weight(1f) around it sizes the box, not the
+            // glyphs, so growing the card above never shrank this on its own.
+            style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Normal,
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .clickable { showType = true }
                 .padding(horizontal = 8.dp),
         )
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(12.dp))
         if (caption != null) {
             Row {
                 Text(

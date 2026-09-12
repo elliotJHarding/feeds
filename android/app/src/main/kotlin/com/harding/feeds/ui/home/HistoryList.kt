@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -111,7 +112,12 @@ fun HistoryList(
         return
     }
 
-    LazyColumn(modifier.fillMaxSize()) {
+    // The filter pill floats over the bottom of this list, so the last rows need room to clear
+    // it - otherwise the oldest feed of the window is permanently unreadable behind it.
+    LazyColumn(
+        modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = FloatingFilterClearance),
+    ) {
         days.forEach { day ->
             item(key = "header-${day.date}") { DayHeader(day, today) }
             day.items.forEach { entry ->
@@ -500,3 +506,6 @@ private const val GapLabelTemplate = "9h 59m"
 // Each dot is one started half hour; long stretches cap, the text stays exact.
 private const val GapDotMinutes = 30L
 private const val GapDotMax = 9
+
+// Pill height (about 42dp) plus its 14dp bottom margin, plus a little air.
+private val FloatingFilterClearance = 72.dp

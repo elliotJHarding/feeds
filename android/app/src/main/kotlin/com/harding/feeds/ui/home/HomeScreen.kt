@@ -95,18 +95,22 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
         scaffoldState = scaffoldState,
         sheetPeekHeight = PeekHeight,
         sheetContent = {
-            // The filter is pinned outside the LazyColumn, at the sheet's bottom edge: with the
-            // sheet expanded that puts it in the thumb arc, matching the one-thumb design of
-            // the entry surface above.
-            Column(Modifier.fillMaxSize()) {
+            // The filter floats over the list rather than taking a band of its own: the sheet
+            // peek is only 160dp, and a full-width bar spent a quarter of it on a control that
+            // is used occasionally. Floating keeps every pixel of the peek showing history,
+            // and puts the pill in the thumb arc when the sheet is expanded.
+            Box(Modifier.fillMaxSize()) {
                 HistoryList(
                     days = visibleDays,
                     filter = historyFilter,
                     onFeedTap = { editing = EditTarget.Feed(it) },
                     onNapTap = { editing = EditTarget.Nap(it) },
-                    modifier = Modifier.weight(1f),
                 )
-                HistoryFilterBar(selected = historyFilter, onSelect = vm::selectHistoryFilter)
+                HistoryFilterPill(
+                    selected = historyFilter,
+                    onSelect = vm::selectHistoryFilter,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         },
     ) { padding ->
@@ -203,40 +207,45 @@ private sealed interface EditTarget {
 }
 
 /**
- * Feeds | Both | Naps. "How long since the last feed" and "how long since the last nap" are
- * answered on the entry card; this narrows the list when one rhythm is what you want to read.
+ * Feeds | Both | Naps, as one floating pill centred over the list.
+ *
+ * "How long since the last feed" and "how long since the last nap" are answered on the entry
+ * card; this only narrows the list when one rhythm is what you want to read. It is therefore an
+ * occasional control, and it earns no permanent band of its own - it hovers, sized to its
+ * content, and the list scrolls beneath it.
  */
 @Composable
-private fun HistoryFilterBar(selected: HistoryFilter, onSelect: (HistoryFilter) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+private fun HistoryFilterPill(
+    selected: HistoryFilter,
+    onSelect: (HistoryFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        // Lifts it off the rows passing underneath; without this the labels collide with the
+        // text they are floating over.
+        shadowElevation = 8.dp,
+        tonalElevation = 3.dp,
+        modifier = modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(bottom = 14.dp),
+    ) {
+        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             HistoryFilter.entries.forEach { filter ->
                 val isSelected = filter == selected
                 Surface(
                     onClick = { onSelect(filter) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
-                    contentColor = if (isSelected) MaterialTheme.colorScheme.primary
+                    shape = CircleShape,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outline,
-                    ),
-                    modifier = Modifier.weight(1f).height(36.dp),
                 ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            filter.name.lowercase().replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
+                    Text(
+                        filter.name.lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
+                    )
                 }
             }
         }
