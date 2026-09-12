@@ -113,32 +113,35 @@ Foreground polling: refetch on app open/resume plus a ~15 second poll while the 
   and whether the baby slept through it does not change that number.
 - A sticky **Feeds / Both / Naps** filter sits at the sheet's bottom edge, in the thumb arc when
   the sheet is expanded. The day header drops terms it can no longer count under a filter.
-- Charts, v1: **interval pattern** (gap between feeds / time-of-day view) and **duration trend** (feed minutes per day). Feeds-per-day count and L/R balance are deferred.
+- Charts, v1: **interval pattern** (gap between feeds / time-of-day view) and **duration trend** (feed minutes per day). Feeds-per-day count and L/R balance are deferred. Naps and a configurable window landed in v2, below.
 
-#### Charts, agreed direction (not built)
+#### Charts, v2: naps and a window
 
-Two changes come before any new chart. Both exist to stop the time-of-day chart becoming
-unreadable once naps are on it.
+- **The window is configurable**: 7d / 14d / 30d, in the app bar. 30 is the cap, and the limit is
+  measured rather than chosen. The time-of-day chart gives one column per day out of about 337dp
+  of plot on a 411dp screen, so 30 days leaves 11dp a column against a 5dp mark. At 60 days a
+  column is 5.6dp and the marks touch. A longer window needs that chart to scroll sideways.
+- **The Feeds / Both / Naps filter is the timeline's**, not a second control. `HistoryFilter`
+  became `EventFilter` and moved with its pill to `ui/components/`. The pill now carries no
+  position of its own; the timeline adds the inset that floats it over the sheet.
+- **Naps are bands behind the feed marks.** A nap is hours where a feed is minutes, so it reads as
+  ground rather than as another event on the same scale. Under Naps the trend charts swap to
+  slept minutes per day and average nap length. Under Both all five show, and shortening that is
+  what the filter is for.
+- The series live in `ui/charts/ChartSeries.kt` as pure functions, for the reason the timeline's
+  builders do: splitting an event across midnight is where a silently wrong number would live,
+  and a view model taking an `AppContainer` cannot be tested here.
+- Both range queries filter on `startTime` alone, so the view model queries **one day wider** than
+  the window and lets the day clamp trim it. Without that an overnight nap on the leading edge
+  vanished whole.
 
-- **The window becomes configurable.** It is fixed at 14 days (`ChartsViewModel.WINDOW_DAYS`).
-  There are 69 days of real data, so the charts show under a quarter of it, which is too short to
-  see any trend.
-- **The Feeds / Both / Naps filter is reused on the charts screen.** `HistoryFilter` is a bare
-  enum with no dependencies, and `HistoryFilterPill` already takes only `selected`, `onSelect` and
-  `modifier`. It is private to `HomeScreen.kt`, so reuse means moving one composable to
-  `ui/components/`. Nothing else has to change.
-
-Only then is naps-on-the-time-of-day-chart worth building, and it needs weeks of nap data first.
-There was exactly **one** nap row on 12 Sep 2026, the day naps shipped.
-
-**Measured against 1,102 real feeds over 69 days**, to decide what a chart would actually say:
+**Measured against 1,102 real feeds over 69 days**, deciding what is worth charting at all:
 
 - The night is where the signal is. The mean gap between night feeds roughly doubled over ten
-  weeks, 72 to 111 minutes, and night feeds fell from 55 a week to 33. Nothing in the app shows
-  this.
-- Chart the **mean** night gap, not the longest stretch. The weekly maximum reads 386, 279, 266,
-  429 - noise that would suggest reversals that did not happen. The mean does not.
-- Feeds per day peaked at 19.3 in late July and now sits at 13.5. Real, and currently invisible.
+  weeks, 72 to 111 minutes, and night feeds fell from 55 a week to 33. **Still not charted.**
+- If that chart is built, chart the **mean** night gap, not the longest stretch. The weekly
+  maximum reads 386, 279, 266, 429 - noise that would suggest reversals that did not happen.
+- Feeds per day peaked at 19.3 in late July and now sits at 13.5. Real, and still invisible.
 - **L/R balance stays out of scope, and the data is the reason.** Weekly counts run 50/54, 58/57,
   65/64, 51/51, 43/44. The chart would report "even" forever.
 
