@@ -89,6 +89,43 @@ components:
           readOnly: true
           description: Server-set on every write; drives the updatedSince sync query and last-write-wins conflict resolution.
 
+    NapDto:
+      type: object
+      required:
+        - id
+        - babyId
+        - startTime
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Client-generated UUID. The server stores the client's id verbatim; resending the same id is idempotent, which makes offline sync retries safe.
+        babyId:
+          type: integer
+          format: int64
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null while the nap is in progress. Setting it (via update) ends the nap. Duration is always derived client-side from endTime - startTime and is never stored or transferred.
+        createdBy:
+          type: integer
+          format: int64
+          readOnly: true
+          description: Id of the AppUser that created the nap. Display-only; any group member may edit or delete any nap.
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Server-set on every write; drives the updatedSince sync query and last-write-wins conflict resolution.
+
     BabyDto:
       type: object
       required:
@@ -321,10 +358,15 @@ paths:
       summary: Create a feed
       description: >
         Creates a feed with the client-generated id from the request body.
-        Creating with endTime null starts an in-progress feed. Idempotent by
-        id - if a feed with this id already exists in the caller's group the
-        request succeeds and returns the existing feed unchanged (200), so
-        offline sync retries are safe.
+        Creating with endTime null starts an in-progress feed, and ends any nap
+        that is in progress for the same baby, setting that nap's endTime to
+        this feed's startTime (never earlier than the nap's own startTime): at
+        most one event of either type is in progress at a time. Creating a feed
+        that is already complete (endTime set, as a bottle always is) is a
+        retrospective log and ends nothing. Idempotent by id - if a feed with
+        this id already exists in the caller's group the request succeeds and
+        returns the existing feed unchanged (200) and ends nothing, so offline
+        sync retries are safe.
       requestBody:
         required: true
         content:
@@ -396,6 +438,159 @@ paths:
           description: Feed deleted
         '404':
           description: Feed not found
+
+  # Nap Endpoints
+  /naps:
+    get:
+      operationId: getNaps
+      tags:
+        - Naps
+      summary: Get naps for a baby
+      description: >
+        Returns naps ordered by startTime descending, including any in-progress
+        nap (endTime null). Filtering, paging and the delete-reconciliation
+        contract are identical to GET /feeds: from/to filter on startTime (from
+        inclusive, to exclusive), updatedSince is an incremental filter for
+        creates and updates ONLY, and deletes are hard deletes with no
+        tombstone, so a poll filtered by updatedSince alone will never observe
+        one. Reconcile deletes by refetching a visible window by from/to.
+        Note that `from` filters on startTime, not on overlap - a nap that
+        started before the window is not returned even if it is still running.
+        That is deliberate: it makes the server filter the exact complement of
+        the client's local delete predicate, so window reconciliation can never
+        delete a live row. Clients must size the nap window generously enough
+        (days, not hours) that a forgotten in-progress nap stays reconcilable.
+      parameters:
+        - name: babyId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: from
+          in: query
+          required: false
+          description: Only naps with startTime >= from
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Only naps with startTime < to
+          schema:
+            type: string
+            format: date-time
+        - name: updatedSince
+          in: query
+          required: false
+          description: >
+            Only naps with updatedAt > updatedSince. Combines with from/to if
+            both are given. Optimisation for incremental pulls of creates and
+            updates only - deletes are hard deletes with no tombstone and are
+            invisible to this filter; reconcile deletes by refetching the
+            visible window with from/to (see operation description).
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of naps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NapDto'
+
+    post:
+      operationId: createNap
+      tags:
+        - Naps
+      summary: Create a nap
+      description: >
+        Creates a nap with the client-generated id from the request body.
+        Creating with endTime null starts an in-progress nap, and ends any feed
+        that is in progress for the same baby, setting that feed's endTime to
+        this nap's startTime (never earlier than the feed's own startTime): at
+        most one event of either type is in progress at a time. Creating a nap
+        that is already complete (endTime set) is a retrospective log and ends
+        nothing. Idempotent by id - if a nap with this id already exists in the
+        caller's group the request succeeds and returns the existing nap
+        unchanged (200) and ends nothing, so offline sync retries are safe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NapDto'
+      responses:
+        '201':
+          description: Created nap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NapDto'
+        '200':
+          description: Nap with this id already exists (idempotent replay) - returned unchanged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NapDto'
+
+  /naps/{id}:
+    put:
+      operationId: updateNap
+      tags:
+        - Naps
+      summary: Update a nap
+      description: >
+        Full replacement of the nap's editable fields. Setting endTime on an
+        in-progress nap ends it. Retrospective edits are unrestricted - an edit
+        that makes a nap overlap a feed is accepted, because correcting history
+        must never be refused; only starting an event enforces exclusivity.
+        Concurrent edits resolve last-arrival-wins (updatedAt is server-set).
+        Any group member may update any nap.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NapDto'
+      responses:
+        '200':
+          description: Updated nap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NapDto'
+        '404':
+          description: Nap not found
+
+    delete:
+      operationId: deleteNap
+      tags:
+        - Naps
+      summary: Delete a nap
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Nap deleted
+        '404':
+          description: Nap not found
 
   # Baby Endpoints
   /babies:

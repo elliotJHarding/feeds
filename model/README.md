@@ -135,16 +135,27 @@ Carried over from the meals contract so the workflow feels familiar:
 - `format: uuid` only for client-generated / shareable identifiers (Feed id, FamilyGroup
   uuid); `integer format: int64` for server-assigned DB ids (Baby, AppUser).
 - Error responses are bare descriptions - no error body schema.
-- No duration field on Feed, ever: duration is derived client-side from
+- No duration field on Feed or Nap, ever: duration is derived client-side from
   `endTime - startTime`.
+- Feed and Nap are separate resources with an identical lifecycle shape: a client-generated
+  uuid, a required `startTime`, and a nullable `endTime` that means "in progress". Keep their
+  schemas, query parameters and sync semantics in step - a change to one is almost always a
+  change to both.
 
 ## Sync & deletes
 
-`updatedSince` on `GET /feeds` is an optimisation for incremental pulls of creates and
-updates only. Deletes are hard deletes with no tombstone, so they are invisible to an
-`updatedSince` filter. The client's 15s foreground poll must refetch its visible window
-(e.g. the last 48h) by `from`/`to` range, which reconciles deletes by replacing that
-window's contents. Do not build a poll that relies on `updatedSince` alone.
+`updatedSince` on `GET /feeds` and `GET /naps` is an optimisation for incremental pulls of
+creates and updates only. Deletes are hard deletes with no tombstone, so they are invisible to
+an `updatedSince` filter. The client's 15s foreground poll must refetch its visible window by
+`from`/`to` range, which reconciles deletes by replacing that window's contents. Do not build a
+poll that relies on `updatedSince` alone.
+
+`from` filters on `startTime`, never on overlap. That makes the server's filter the exact
+complement of the client's local delete predicate, so a window refetch can never delete a live
+row. It also means anything that *started* before the window is invisible to delete
+reconciliation, so the window must be wider than the longest plausible record. Feeds use 48h.
+Naps use 7 days, because a forgotten in-progress nap would otherwise strand itself locally and
+show as a permanent "nap in progress" on every surface.
 
 ## Validating a spec change
 
@@ -156,3 +167,7 @@ as-is fails.) For a faster standalone parse check:
 ```
 python3 -c "import yaml; yaml.safe_load(open('model/openapi.yaml'))"
 ```
+
+This needs a `python3` that has PyYAML. On a Mac where `/usr/bin/python3` shadows Homebrew it
+raises `ModuleNotFoundError: No module named 'yaml'` - use the interpreter that has it
+(`/opt/homebrew/bin/python3`), or `ruby -ryaml -e 'YAML.load_file("model/openapi.yaml")'`.
