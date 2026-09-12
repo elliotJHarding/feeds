@@ -21,7 +21,28 @@ Entities, mirroring the meals `FamilyGroup` pattern (all data scoped to the grou
   - `end_time` — **nullable**: a feed with no end time is *in progress*. Tap start when the feed begins, tap end when it finishes.
   - `created_by`, `created_at`, `updated_at`
 
+- **Nap** — the second record type, added after v1:
+  - `id` — UUID, generated client-side, as for Feed
+  - `baby_id` — FK to Baby
+  - `start_time` — required
+  - `end_time` — **nullable**: a nap with no end time is *in progress*
+  - `created_by`, `created_at`, `updated_at`
+
+  No side and no amount. A nap is a separate entity, not a third `Feed.type`, because no feed
+  query carries a type filter — `findForBaby` and the Google Home state finders among them — so
+  a nap sharing that table would enter all of them silently. A missed filter gives a wrong
+  number in a baby tracker rather than an error.
+
 One feed is one side. A side-switch mid-session is logged as two feeds. Duration is always derived from `end_time - start_time`, never stored.
+
+**At most one event — feed or nap — is in progress at a time.** Starting either ends whatever
+else is running, at the new event's start time, clamped so nothing ends before it began. Only a
+*start* enforces this: a create that is already complete (every bottle, and any retrospective
+log) ends nothing, an idempotent replay ends nothing, and an edit never does — correcting
+history must not be refused. The rule lives on both sides, because the client must apply it
+offline (every "what is happening now" surface reads Room directly) and the server is the only
+place that sees both phones. The duplication is safe: the rule is a pure function of the new
+`start_time`, which travels in the create body, so both sides compute the same end time.
 
 Any group member can edit or delete any feed (two-person trust circle; `created_by` is display-only).
 
@@ -44,7 +65,16 @@ Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme default):
   feed at the shown start time; FINISH sets the end time to the shown finish time. In-progress
   feeds are retained (widget/tile still start/stop via the shared use case, defaulting to now
   since they have no time UI).
-- The **last completed feed is shown prominently** (how long ago, side, start–end range).
+- The status card **always shows two blocks**: whatever is running (or the last feed) above, and
+  the other kind's last completed record below. "How long since the last feed" and "how long
+  since the last nap" are separate concerns — due to feed, versus overtired — and a parent needs
+  both at once at 3am without changing mode. The feed block keeps the prominent reading (how long
+  ago, side, start–end range) and the side stays welded to it; a nap has no side. Deliberate
+  trade against the hero-time rule below: the card is about 96dp taller, and the hero clock gives
+  up that space. Two columns were ruled out by width — the card's inner width is about 280dp, and
+  "2h 10m ago · L" needs about 200dp at headlineMedium.
+- The nap block is anchored on the nap's **end**, not its start: the useful number is how long
+  the baby has been awake. Feeds stay start-to-start, which is how feeding frequency works.
 - Side pre-selected to the **opposite of the last feed's side**; L/R also settable by **swiping
   left/right** anywhere on the entry surface, with tap-on-toggle as the discoverable fallback.
 - Time adjustment is a **horizontal scrub gesture with haptic detents** at 1-minute steps — no
@@ -55,7 +85,12 @@ Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme default):
 ### Quick entry surfaces
 
 - **Home-screen widget** (Glance): shows the last feed's clock time + last side; one tap starts a feed with the side prepopulated; when a feed is in progress it shows the start clock time + stop. The glance-value is an absolute clock time (not a relative "2h ago"/"12m" duration) so it never goes stale between the widget's infrequent background refreshes. Reads the local Room cache so it works offline and without app launch.
-- **Quick Settings tile**: starts/stops a feed from the pull-down shade, same intent as the widget.
+- The widget's default size is unchanged at 2x1, where the running event owns the single
+  glance-value and the chip ends it. Two chips plus the reading need roughly 190dp and 2 cells
+  give about 110–140dp, so **starting** a nap from the widget appears only when the user stretches
+  it to 3 cells or more.
+- **Quick Settings tile**: starts a feed from the pull-down shade and stops whatever is running,
+  naps included. Its label always names which of the two a tap will do.
 - App shortcuts (long-press icon) are not planned; the widget and tile cover the use case.
 
 ### Offline-first
@@ -68,7 +103,16 @@ Foreground polling: refetch on app open/resume plus a ~15 second poll while the 
 
 ### History and charts
 
-- Chronological feed list grouped by day; tap to edit or delete (full replacement for the notes app).
+- Chronological list grouped by day; tap to edit or delete (full replacement for the notes app).
+- **Feeds and naps share one timeline**, in time order. Feeds group into sessions; a nap stands
+  alone, because only one event runs at a time so a nap is never part of a feeding session. A nap
+  draws no duration bar — the feed bar cap is 20 minutes, so every nap would clamp to full width
+  and a 35-minute nap would look like a three-hour one. Naps use the dot row the list already
+  reserves for hours-scale magnitudes.
+- Session gaps stay feed-only and a nap never replaces one: the gap measures feeding frequency,
+  and whether the baby slept through it does not change that number.
+- A sticky **Feeds / Both / Naps** filter sits at the sheet's bottom edge, in the thumb arc when
+  the sheet is expanded. The day header drops terms it can no longer count under a filter.
 - Charts, v1: **interval pattern** (gap between feeds / time-of-day view) and **duration trend** (feed minutes per day). Feeds-per-day count and L/R balance are deferred.
 
 ## Server
@@ -103,7 +147,13 @@ One-off import of the existing notes-app history: export/paste the notes text, p
 ## Out of scope for v1
 
 - FCM push / background realtime
-- Bottle feed entry UI (schema supports it; UI deferred)
 - Multiple-baby UI (schema supports it)
 - Feeds-per-day and L/R balance charts, CSV export
+- Nap charts — the charts screen stays feed-only
+- **Google Home voice for naps.** `GOOGLEHOME.md` records that Gemini does not surface custom
+  mode state, so a `last_nap` mode would land in that same gap. The integration already has the
+  precedent that a type can stay app-only: bottles are deliberately app-only too. Voice start and
+  stop still end a running nap, so the server cannot contradict the one-event rule.
 - iOS and web clients
+
+Shipped since v1, so no longer out of scope: bottle feed entry UI (commit `8d77b7b`).
