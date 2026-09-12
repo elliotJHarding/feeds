@@ -88,6 +88,58 @@ class PaletteTest {
         }
     }
 
+    /**
+     * The one thing that does not vary across themes. A parent who changes theme should not have
+     * to start reading the letter on the chip, so L stays on the cool half of the wheel and R on
+     * the warm half in every preset.
+     *
+     * Ember is the exception, and for a stated reason: the cool half is the band that palette
+     * exists to avoid, so its L takes a dusty rose instead.
+     */
+    @Test
+    fun `L is cool and R is warm in every preset but Ember`() {
+        Presets.all.filter { it != Presets.Ember }.forEach { palette ->
+            val left = palette.left.toHsv().hue
+            val right = palette.right.toHsv().hue
+            assertTrue(
+                "${palette.name} L is at ${left.roundToInt()} degrees, off the cool half",
+                left in COOL,
+            )
+            assertTrue(
+                "${palette.name} R is at ${right.roundToInt()} degrees, off the warm half",
+                right >= WARM_FROM || right <= WARM_TO,
+            )
+        }
+    }
+
+    /**
+     * The variation the range exists for. Nine backgrounds carrying one palette is not a range,
+     * and that is what the first version of these presets was.
+     *
+     * One pair is exempt and named. Daybreak is Candlelight's light twin on purpose: the app
+     * ships in Candlelight, so the likeliest want from a light theme is the same app, readable
+     * in daylight. Every other pair must differ.
+     */
+    @Test
+    fun `no two presets share an accent set, except the one deliberate twin`() {
+        val twin = setOf(Presets.Candlelight.id, Presets.Daybreak.id)
+
+        for (first in Presets.all.indices) {
+            for (second in first + 1 until Presets.all.size) {
+                val one = Presets.all[first]
+                val other = Presets.all[second]
+                if (setOf(one.id, other.id) == twin) continue
+
+                val sameHues = one.eventAccents.zip(other.eventAccents)
+                    .all { (a, b) -> hueGap(a, b) < SAME_HUE }
+                assertTrue(
+                    "${one.name} and ${other.name} carry the same four hues",
+                    !sameHues,
+                )
+            }
+        }
+    }
+
     @Test
     fun `the range holds six dark themes and three light ones`() {
         assertEquals(6, Presets.all.count { it.isDark })
@@ -141,6 +193,16 @@ class PaletteTest {
 
         /** Measured, not guessed. See the note on the reproduction test. */
         const val MAX_DRIFT = 5f
+
+        /** Two hues closer than this are the same colour for the purpose of comparing sets. */
+        const val SAME_HUE = 12f
+
+        /** The cool half of the wheel, where every L sits. */
+        val COOL = 150f..280f
+
+        /** And the warm half, which wraps past 360, where every R sits. */
+        const val WARM_FROM = 300f
+        const val WARM_TO = 60f
 
         /** Every slot of the hand-tuned scheme that the app reads. */
         val handTunedCandlelight = listOf(

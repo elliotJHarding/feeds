@@ -47,8 +47,14 @@ data class Palette(
  * this screen existed. An upgrade therefore changes nobody's app. `PaletteTest` pins that.
  *
  * Within one preset the four event accents stay apart in hue, for the reason the old `napColor`
- * comment recorded: a nap row must never read as a side. [hueGap] measures it and
+ * comment recorded: a nap row must never read as a side. `looksAlike` measures it and
  * `PaletteTest` asserts it.
+ *
+ * Across presets the rule is narrower, and it is deliberately narrow: **L is cool and R is
+ * warm**, everywhere. A parent who changes theme keeps that much muscle memory, so the letter
+ * never has to be read. Everything else varies - each theme picks its own cool, its own warm,
+ * and its own two remaining lanes, so the range is a range of palettes rather than a range of
+ * backgrounds. [Ember] is the one exception, and it says why on itself.
  */
 object Presets {
 
@@ -68,74 +74,82 @@ object Presets {
         stop = Color(0xFFCF7367),
     )
 
-    /** Cool blue-grey on deep navy ink. The coolest of the dark set. */
+    /** Cyan and peach on deep navy ink. The coolest of the dark set. */
     val Moonlight = Palette(
         id = "moonlight",
         name = "Moonlight",
         background = Color(0xFF0E1116),
         accent = Color(0xFF8FB6DE),
-        left = Color(0xFF7FC7D9),
-        right = Color(0xFFE0B77A),
-        bottle = Color(0xFF9FD1A8),
-        nap = Color(0xFFB3A6E0),
+        left = Color(0xFF77D1D9),
+        right = Color(0xFFE6A17E),
+        bottle = Color(0xFF7DD192),
+        nap = Color(0xFFAE9DE0),
         stop = Color(0xFFE08C7A),
     )
 
-    /** Orchid and violet on a near-black plum ground. */
+    /**
+     * Indigo and rose on a near-black plum ground. The one theme where R is a pink rather than
+     * an amber - still the warm half of the wheel, so L and R stay cool against warm.
+     */
     val Blackcurrant = Palette(
         id = "blackcurrant",
         name = "Blackcurrant",
         background = Color(0xFF141018),
         accent = Color(0xFFD9A8C8),
-        left = Color(0xFF8FB8E0),
-        right = Color(0xFFE8B57A),
-        bottle = Color(0xFF9FD4B0),
-        nap = Color(0xFFC2A6E8),
+        left = Color(0xFF8292E0),
+        right = Color(0xFFE68A99),
+        bottle = Color(0xFF76CCB7),
+        nap = Color(0xFFDB95E5),
         stop = Color(0xFFE0837E),
     )
 
     /**
      * The warmest theme, and the best one for a night feed. Every colour sits outside the
      * 180-260 degree band, which is where the ~460nm blue that suppresses melatonin lives.
+     *
+     * This is the one theme where L is not cool. It cannot be: the cool half of the wheel is
+     * exactly the band this palette exists to avoid. L takes a dusty rose instead, and R the
+     * amber, so the two still separate.
      */
     val Ember = Palette(
         id = "ember",
         name = "Ember",
         background = Color(0xFF1A0F0B),
-        accent = Color(0xFFF2A960),
-        left = Color(0xFFE8A0B4),
-        right = Color(0xFFF2A960),
-        bottle = Color(0xFFB8C48A),
-        nap = Color(0xFFC9A3C9),
+        accent = Color(0xFFF09C6C),
+        left = Color(0xFFE68EAB),
+        right = Color(0xFFF09C6C),
+        bottle = Color(0xFF87C787),
+        nap = Color(0xFFCE96D6),
         stop = Color(0xFFE07B62),
     )
 
-    /** Pale sage on a deep forest ground. */
+    /** Cyan and coral on a deep forest ground, with a gold bottle rather than a green one. */
     val Pine = Palette(
         id = "pine",
         name = "Pine",
         background = Color(0xFF0D1410),
         accent = Color(0xFF9AD1A8),
-        left = Color(0xFF88C2DE),
-        right = Color(0xFFE8C07A),
-        bottle = Color(0xFFBCD98F),
-        nap = Color(0xFFB8A8DB),
+        left = Color(0xFF7AD4DE),
+        right = Color(0xFFEB8975),
+        bottle = Color(0xFFE0D87B),
+        nap = Color(0xFFC29BDE),
         stop = Color(0xFFDE8570),
     )
 
     /**
-     * Neutral grey chrome, for a parent who wants no colour character. The accent is almost
-     * unsaturated, so the four event colours carry all of the meaning.
+     * The quiet one, for a parent who wants no colour character. It varies by saturation rather
+     * than by hue: neutral grey chrome, and four accents muted to about 0.3 saturation, so the
+     * whole app reads softer without losing which colour means which.
      */
     val Slate = Palette(
         id = "slate",
         name = "Slate",
         background = Color(0xFF111417),
         accent = Color(0xFFB9C2C9),
-        left = Color(0xFF7FB4D4),
-        right = Color(0xFFE0B486),
-        bottle = Color(0xFF93C99E),
-        nap = Color(0xFFAFA3CE),
+        left = Color(0xFF8BAAD6),
+        right = Color(0xFFE0A992),
+        bottle = Color(0xFF8BC7AE),
+        nap = Color(0xFFB69FD6),
         stop = Color(0xFFD4837A),
     )
 
@@ -160,16 +174,16 @@ object Presets {
         stop = Color(0xFF9B3224),
     )
 
-    /** A faint lilac ground. The softest of the light set. */
+    /** A faint lilac ground, with deep teal and ochre. The softest of the light set. */
     val Nursery = Palette(
         id = "nursery",
         name = "Nursery",
         background = Color(0xFFF6F2F7),
         accent = Color(0xFF6E5178),
-        left = Color(0xFF3A6376),
-        right = Color(0xFF875A32),
-        bottle = Color(0xFF46693F),
-        nap = Color(0xFF57489B),
+        left = Color(0xFF2F6475),
+        right = Color(0xFF805924),
+        bottle = Color(0xFF2D6B47),
+        nap = Color(0xFF693D80),
         stop = Color(0xFF8E3B34),
     )
 
