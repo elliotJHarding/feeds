@@ -84,6 +84,14 @@ interface FeedDao {
         }
     }
 
+    /**
+     * The window delete that reconciles server deletes, which carry no tombstone.
+     *
+     * The `startTime >= :from` predicate must stay the exact complement of the server's `from`
+     * filter on GET /feeds, which also matches on startTime rather than on overlap. Change one
+     * side alone - say, to "overlaps the window" - and this deletes feeds that are still alive
+     * on the server.
+     */
     @Query(
         "DELETE FROM feeds WHERE syncState = 'SYNCED' AND babyId = :babyId " +
             "AND startTime >= :from AND id NOT IN (:keepIds)"

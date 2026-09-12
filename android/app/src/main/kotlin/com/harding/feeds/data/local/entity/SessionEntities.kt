@@ -29,3 +29,17 @@ data class SyncCursorEntity(
     @PrimaryKey val babyId: Long,
     val lastServerUpdatedAt: Instant,
 )
+
+/**
+ * The same cursor for naps. A second table rather than a `resource` column on [SyncCursorEntity]
+ * because SQLite cannot alter a primary key: widening that key would mean create-copy-drop-rename
+ * over the family's live data on the project's first-ever migration, to buy a tidier shape and no
+ * new capability. This keeps the migration to pure CREATE statements, and its worst failure mode
+ * is a reset cursor, which self-heals - a null cursor means "pull everything", exactly the
+ * first-sync path, and the merge is idempotent.
+ */
+@Entity(tableName = "nap_sync_cursors")
+data class NapSyncCursorEntity(
+    @PrimaryKey val babyId: Long,
+    val lastServerUpdatedAt: Instant,
+)

@@ -85,6 +85,15 @@ kotlin {
     }
 }
 
+// Room writes the schema it expects for each version to app/schemas, and those files are
+// committed. Hand-written migration SQL must match Room's generated schema byte for byte -
+// a mismatch throws "Migration didn't properly handle" at runtime, and only on an *upgrading*
+// install, because a fresh install runs createAllTables and never executes the migration.
+// Copy migration DDL out of these files rather than writing it from memory.
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 // API client generated from the monorepo contract - the exact setup documented in
 // ../model/README.md (kotlin generator, jvm-retrofit2, gson, coroutines).
 openApiGenerate {
