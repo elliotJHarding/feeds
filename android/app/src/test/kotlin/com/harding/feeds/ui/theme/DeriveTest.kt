@@ -58,6 +58,27 @@ class DeriveTest {
         }
     }
 
+    /**
+     * `HistoryList.SessionGap` paints the gap between two sessions with `onPrimaryContainer`,
+     * straight onto the page rather than onto a container. The slot's name promises a container,
+     * so nothing in the type system says this must read on the page - only this test does.
+     *
+     * It caught a real defect. The first version of the rule always returned a pale tint, which
+     * was correct while the app was dark-only. On the light presets it left "2h 49m" almost
+     * invisible, and the on-device screenshot is what found it.
+     */
+    @Test
+    fun `accent-tinted text reads on the page, not only on a container`() {
+        Presets.all.forEach { palette ->
+            val scheme = schemeFor(palette)
+            val ratio = contrastRatio(palette.background, scheme.onPrimaryContainer)
+            assertTrue(
+                "${palette.name} gap text is ${ratio.round()}:1 on its own ground",
+                ratio >= readable,
+            )
+        }
+    }
+
     @Test
     fun `a dark theme takes the pale tone and a light theme takes the ink tone`() {
         Presets.all.forEach { palette ->

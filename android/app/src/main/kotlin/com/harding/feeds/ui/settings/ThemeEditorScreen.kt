@@ -3,6 +3,7 @@ package com.harding.feeds.ui.settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -244,11 +245,18 @@ private fun ColorRow(
     ) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // The hairline is load-bearing. A near-white background swatch on a light card
+                // has no edge of its own and simply disappears.
                 Box(
                     Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(color),
+                        .background(color)
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline,
+                            RoundedCornerShape(10.dp),
+                        ),
                 )
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {

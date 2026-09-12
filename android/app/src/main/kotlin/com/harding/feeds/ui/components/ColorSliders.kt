@@ -127,28 +127,35 @@ private fun GradientSlider(
                 .weight(1f)
                 .height(36.dp)
                 .semantics { contentDescription = "$label $reading" }
+                // The thumb travels inside an inset, so the gesture must map the same way or a
+                // press would not land where the thumb sits.
                 .pointerInput(Unit) {
-                    detectTapGestures { at -> moveTo((at.x / size.width).coerceIn(0f, 1f)) }
+                    val inset = ThumbRadius.toPx()
+                    detectTapGestures { at -> moveTo(fractionAt(at.x, size.width.toFloat(), inset)) }
                 }
                 .pointerInput(Unit) {
+                    val inset = ThumbRadius.toPx()
                     detectHorizontalDragGestures { change, _ ->
-                        moveTo((change.position.x / size.width).coerceIn(0f, 1f))
+                        moveTo(fractionAt(change.position.x, size.width.toFloat(), inset))
                     }
                 },
         ) {
-            val trackHeight = 14.dp.toPx()
+            val trackHeight = TrackHeight.toPx()
+            val radius = ThumbRadius.toPx()
             val top = (size.height - trackHeight) / 2f
+
+            // The track is inset by the thumb's radius at both ends. Without it the thumb runs
+            // off the canvas at 0% and 100%, where it is clipped and sits over the reading.
             drawRoundRect(
                 brush = Brush.horizontalGradient(stops),
-                topLeft = Offset(0f, top),
-                size = Size(size.width, trackHeight),
+                topLeft = Offset(radius, top),
+                size = Size(size.width - radius * 2f, trackHeight),
                 cornerRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f),
             )
 
             // Two rings, ground outside and ink inside. One ring alone disappears wherever the
             // track happens to match it, and a colour track passes through every tone.
-            val centre = Offset(size.width * fraction, size.height / 2f)
-            val radius = trackHeight * 0.86f
+            val centre = Offset(radius + (size.width - radius * 2f) * fraction, size.height / 2f)
             drawCircle(ground, radius, centre, style = Stroke(width = 4.dp.toPx()))
             drawCircle(ink, radius, centre, style = Stroke(width = 2.dp.toPx()))
         }
@@ -156,7 +163,17 @@ private fun GradientSlider(
             reading,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(48.dp).padding(start = 8.dp),
+            modifier = Modifier.width(56.dp).padding(start = 8.dp),
         )
     }
+}
+
+/** The thumb sits proud of the track, so the track is inset by this much at both ends. */
+private val TrackHeight = 14.dp
+private val ThumbRadius = 12.dp
+
+/** Where a press lands, in 0..1, given the same inset the thumb travels within. */
+private fun fractionAt(x: Float, width: Float, inset: Float): Float {
+    val span = width - inset * 2f
+    return if (span <= 0f) 0f else ((x - inset) / span).coerceIn(0f, 1f)
 }

@@ -139,9 +139,13 @@ private const val DIM_VALUE_ON_LIGHT = 0.42f
 /** How much of the ground a container slot mixes into an accent. */
 private const val CONTAINER_GROUND_SHARE = 0.75f
 
-/** A container's own foreground: the accent, lifted toward the pale tone. */
+/** Accent-tinted text on a dark theme: the accent, lifted toward the pale tone. */
 private const val CONTAINER_TEXT_SATURATION = 0.55f
 private const val CONTAINER_TEXT_VALUE = 0.95f
+
+/** And on a light theme, where it must go down instead, and hold its colour to stay legible. */
+private const val CONTAINER_TEXT_LIFT = 1.1f
+private const val CONTAINER_TEXT_DEPTH = 0.42f
 
 val Palette.isDark: Boolean get() = relativeLuminance(background) < 0.5f
 
@@ -203,10 +207,21 @@ private fun Palette.containerOf(accentColor: Color): Color {
     )
 }
 
-/** An accent lifted to a readable tint, for text on a container slot. */
-private fun containerTextOf(accentColor: Color): Color {
+/**
+ * An accent tinted for use as text.
+ *
+ * The tone follows the ground, like every other foreground here. A fixed pale tint worked while
+ * the app was dark-only, and it failed the moment a light theme existed: `HistoryList.SessionGap`
+ * paints the gap between sessions with `onPrimaryContainer` straight onto the page, so a pale
+ * tint left "2h 49m" barely visible on a light ground.
+ */
+private fun Palette.containerTextOf(accentColor: Color): Color {
     val hsv = accentColor.toHsv()
-    return hsvColor(hsv.hue, hsv.saturation * CONTAINER_TEXT_SATURATION, CONTAINER_TEXT_VALUE)
+    return if (isDark) {
+        hsvColor(hsv.hue, hsv.saturation * CONTAINER_TEXT_SATURATION, CONTAINER_TEXT_VALUE)
+    } else {
+        hsvColor(hsv.hue, minOf(1f, hsv.saturation * CONTAINER_TEXT_LIFT), CONTAINER_TEXT_DEPTH)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -230,11 +245,11 @@ fun schemeFor(palette: Palette): ColorScheme {
         primary = palette.accent,
         onPrimary = onColorFor(palette.accent, palette),
         primaryContainer = palette.containerOf(palette.accent),
-        onPrimaryContainer = containerTextOf(palette.accent),
+        onPrimaryContainer = palette.containerTextOf(palette.accent),
         secondary = palette.left,
         onSecondary = onColorFor(palette.left, palette),
         secondaryContainer = palette.containerOf(palette.left),
-        onSecondaryContainer = containerTextOf(palette.left),
+        onSecondaryContainer = palette.containerTextOf(palette.left),
         background = palette.background,
         onBackground = text,
         surface = palette.background,
@@ -251,6 +266,6 @@ fun schemeFor(palette: Palette): ColorScheme {
         error = palette.stop,
         onError = onColorFor(palette.stop, palette),
         errorContainer = palette.containerOf(palette.stop),
-        onErrorContainer = containerTextOf(palette.stop),
+        onErrorContainer = palette.containerTextOf(palette.stop),
     )
 }
