@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
+import com.harding.feeds.ui.components.EventFilterPill
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -106,10 +107,14 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
                     onFeedTap = { editing = EditTarget.Feed(it) },
                     onNapTap = { editing = EditTarget.Nap(it) },
                 )
-                HistoryFilterPill(
+                EventFilterPill(
                     selected = historyFilter,
                     onSelect = vm::selectHistoryFilter,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    // Position and inset belong to this surface, not to the control.
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(bottom = 14.dp),
                 )
             }
         },
@@ -205,52 +210,6 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
 private sealed interface EditTarget {
     data class Feed(val feed: FeedEntity) : EditTarget
     data class Nap(val nap: NapEntity) : EditTarget
-}
-
-/**
- * Feeds | Both | Naps, as one floating pill centred over the list.
- *
- * "How long since the last feed" and "how long since the last nap" are answered on the entry
- * card; this only narrows the list when one rhythm is what you want to read. It is therefore an
- * occasional control, and it earns no permanent band of its own - it hovers, sized to its
- * content, and the list scrolls beneath it.
- */
-@Composable
-private fun HistoryFilterPill(
-    selected: HistoryFilter,
-    onSelect: (HistoryFilter) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        // Lifts it off the rows passing underneath; without this the labels collide with the
-        // text they are floating over.
-        shadowElevation = 8.dp,
-        tonalElevation = 3.dp,
-        modifier = modifier
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(bottom = 14.dp),
-    ) {
-        Row(Modifier.padding(4.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            HistoryFilter.entries.forEach { filter ->
-                val isSelected = filter == selected
-                Surface(
-                    onClick = { onSelect(filter) },
-                    shape = CircleShape,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                ) {
-                    Text(
-                        filter.name.lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp),
-                    )
-                }
-            }
-        }
-    }
 }
 
 /** Brand on the left, actions on the right - a real top bar, floating over the entry surface. */

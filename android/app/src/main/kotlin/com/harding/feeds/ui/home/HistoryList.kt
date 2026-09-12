@@ -36,6 +36,7 @@ import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.ui.bottleColor
 import com.harding.feeds.ui.components.BottleGlyph
+import com.harding.feeds.ui.components.EventFilter
 import com.harding.feeds.ui.components.MoonGlyph
 import com.harding.feeds.ui.dayLabel
 import com.harding.feeds.ui.formatClockTime
@@ -74,7 +75,7 @@ import java.time.LocalDate
 @Composable
 fun HistoryList(
     days: List<DayHistory>,
-    filter: HistoryFilter,
+    filter: EventFilter,
     onFeedTap: (FeedEntity) -> Unit,
     onNapTap: (NapEntity) -> Unit,
     modifier: Modifier = Modifier,
@@ -143,10 +144,10 @@ fun HistoryList(
     }
 }
 
-private fun emptyText(filter: HistoryFilter): String = when (filter) {
-    HistoryFilter.FEEDS -> "Feeds you log will appear here"
-    HistoryFilter.NAPS -> "Naps you log will appear here"
-    HistoryFilter.BOTH -> "Feeds and naps you log will appear here"
+private fun emptyText(filter: EventFilter): String = when (filter) {
+    EventFilter.FEEDS -> "Feeds you log will appear here"
+    EventFilter.NAPS -> "Naps you log will appear here"
+    EventFilter.BOTH -> "Feeds and naps you log will appear here"
 }
 
 @Composable

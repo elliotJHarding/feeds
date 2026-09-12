@@ -5,6 +5,7 @@ import com.harding.feeds.client.models.Side
 import com.harding.feeds.data.local.SyncState
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
+import com.harding.feeds.ui.components.EventFilter
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -137,7 +138,7 @@ class HistoryTimelineTest {
             zone = zone,
         ).single()
 
-        val filtered = day.filtered(HistoryFilter.FEEDS)!!
+        val filtered = day.filtered(EventFilter.FEEDS)!!
 
         assertEquals(1, filtered.items.size)
         assertTrue(filtered.items.single() is TimelineItem.Feeding)
@@ -152,7 +153,7 @@ class HistoryTimelineTest {
             zone = zone,
         ).single()
 
-        val filtered = day.filtered(HistoryFilter.NAPS)!!
+        val filtered = day.filtered(EventFilter.NAPS)!!
 
         assertEquals(1, filtered.items.size)
         assertTrue(filtered.items.single() is TimelineItem.Napping)
@@ -168,9 +169,9 @@ class HistoryTimelineTest {
             zone = zone,
         )
 
-        assertTrue(days.filtered(HistoryFilter.NAPS).isEmpty())
-        assertEquals(1, days.filtered(HistoryFilter.FEEDS).size)
-        assertEquals(1, days.filtered(HistoryFilter.BOTH).size)
+        assertTrue(days.filtered(EventFilter.NAPS).isEmpty())
+        assertEquals(1, days.filtered(EventFilter.FEEDS).size)
+        assertEquals(1, days.filtered(EventFilter.BOTH).size)
     }
 
     // Fixtures

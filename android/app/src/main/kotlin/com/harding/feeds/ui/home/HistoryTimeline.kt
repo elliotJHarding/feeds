@@ -2,13 +2,12 @@ package com.harding.feeds.ui.home
 
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
+import com.harding.feeds.ui.components.EventFilter
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 /** Which records the history sheet is showing. */
-enum class HistoryFilter { FEEDS, BOTH, NAPS }
-
 /**
  * One row-group in the day timeline. Feeds arrive grouped into sessions (see
  * [groupIntoSessions]); a nap stands alone, because only one event runs at a time so a nap is
@@ -88,14 +87,14 @@ fun buildDayHistory(
  * The unmatched list is emptied too, because the header counts read from [DayHistory.feeds] and
  * [DayHistory.naps]: leaving them populated would print "5 feeds" above a nap-only list.
  */
-fun DayHistory.filtered(filter: HistoryFilter): DayHistory? {
+fun DayHistory.filtered(filter: EventFilter): DayHistory? {
     val narrowed = when (filter) {
-        HistoryFilter.BOTH -> this
-        HistoryFilter.FEEDS -> copy(naps = emptyList(), items = items.filterIsInstance<TimelineItem.Feeding>())
-        HistoryFilter.NAPS -> copy(feeds = emptyList(), items = items.filterIsInstance<TimelineItem.Napping>())
+        EventFilter.BOTH -> this
+        EventFilter.FEEDS -> copy(naps = emptyList(), items = items.filterIsInstance<TimelineItem.Feeding>())
+        EventFilter.NAPS -> copy(feeds = emptyList(), items = items.filterIsInstance<TimelineItem.Napping>())
     }
     return narrowed.takeIf { it.items.isNotEmpty() }
 }
 
-fun List<DayHistory>.filtered(filter: HistoryFilter): List<DayHistory> =
+fun List<DayHistory>.filtered(filter: EventFilter): List<DayHistory> =
     mapNotNull { it.filtered(filter) }

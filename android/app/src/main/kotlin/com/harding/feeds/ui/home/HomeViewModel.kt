@@ -12,6 +12,7 @@ import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.di.AppContainer
 import com.harding.feeds.domain.ActiveEvent
 import com.harding.feeds.domain.ActiveEventUseCase
+import com.harding.feeds.ui.components.EventFilter
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -63,8 +64,8 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private val bottleAmountState = MutableStateFlow<Int?>(null)
     val bottleAmount: StateFlow<Int?> = bottleAmountState
 
-    private val historyFilterState = MutableStateFlow(HistoryFilter.BOTH)
-    val historyFilter: StateFlow<HistoryFilter> = historyFilterState
+    private val historyFilterState = MutableStateFlow(EventFilter.BOTH)
+    val historyFilter: StateFlow<EventFilter> = historyFilterState
 
     init {
         viewModelScope.launch {
@@ -140,7 +141,7 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
         bottleAmountState.value = amountMl
     }
 
-    fun selectHistoryFilter(filter: HistoryFilter) {
+    fun selectHistoryFilter(filter: EventFilter) {
         historyFilterState.value = filter
     }
 
