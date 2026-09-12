@@ -117,12 +117,34 @@ in GCP project `feeds-502719` (Android clients carry no secret; the Web client i
   (debug keystore `~/.android/debug.keystore`, alias `androiddebugkey`, storepass `android`)
 
 Dev loop:
-1. `SPRING_PROFILES_ACTIVE=localdev ./gradlew bootRun` from `server/` (in-memory H2 — keeps dev off
-   the prod Supabase feed history).
+1. Start a server — either the H2 one (`SPRING_PROFILES_ACTIVE=localdev ./gradlew bootRun` from
+   `server/`) or, preferably, the prod-shaped one below. Both keep dev off the prod Supabase data.
 2. Set `feeds.apiBaseUrl` in `android/gradle.properties` to reach it (`10.0.2.2:8080` emulator; Mac
    LAN IP for a physical device — the LAN IP drifts, so re-check it; test reachability from the
    phone, not the Mac, which can't curl its own LAN IP).
 3. `./gradlew installDebug` (or Android Studio Run). The release build stays untouched.
+
+### Prefer the prod-shaped dev database over H2
+
+`tools/devdb/refresh-dev-db.sh` rebuilds a local PostgreSQL container from a read-only `pg_dump`
+of prod, then the server runs against it with the **same `DB_URL`/`DB_USERNAME`/`DB_PASSWORD` env
+vars prod uses** — no separate profile:
+
+```
+tools/devdb/refresh-dev-db.sh
+DB_URL=localhost:5433/feeds DB_USERNAME=feeds DB_PASSWORD=feeds \
+GOOGLE_CLIENT_ID=<shared Google Web client id> ./gradlew bootRun
+```
+
+This is not just realism. **H2 cannot catch a whole class of production bug.** It infers
+parameter types PostgreSQL will not, so a query missing the `cast(:from as timestamp)` idiom
+passes every test and then 500s on every read in prod (SQLState 42P18). The tests all run on H2,
+so a local PostgreSQL is the only place that shows up before a deploy. The same goes for
+anything `ddl-auto=update` does to the schema.
+
+Read `tools/devdb/README.md` before running it — the version-match rule, the IPv6-only direct
+host, and the Docker DNS fault are all recorded there, along with the fact that the dump contains
+real personal data.
 
 Release signing keystore: `~/keystores/feeds/feeds-release.jks` (creds in `~/.gradle/gradle.properties`
 as `FEEDS_RELEASE_*`); back it up offline — losing it means the app can never be updated.
