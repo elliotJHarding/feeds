@@ -339,6 +339,8 @@ private fun StatusCard(
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
             when (activeEvent) {
+                // While something runs, the live stats earn the full width; the other anchor
+                // drops to one quiet line so the card does not grow a second storey.
                 is ActiveEvent.Feeding -> {
                     InProgressContent(
                         label = "In progress",
@@ -348,7 +350,7 @@ private fun StatusCard(
                         onAdjustActiveStart = onAdjustActiveStart,
                     )
                     BlockSpacer()
-                    LastNapContent(now, latestEndedNap)
+                    OtherAnchorLine("Last nap", napSummary(now, latestEndedNap))
                 }
 
                 is ActiveEvent.Napping -> {
@@ -360,13 +362,17 @@ private fun StatusCard(
                         onAdjustActiveStart = onAdjustActiveStart,
                     )
                     BlockSpacer()
-                    LastFeedContent(now, latestEndedFeed)
+                    OtherAnchorLine("Last feed", feedSummary(now, latestEndedFeed))
                 }
 
-                null -> {
-                    LastFeedContent(now, latestEndedFeed)
-                    BlockSpacer()
-                    LastNapContent(now, latestEndedNap)
+                // Idle: the two anchors sit side by side rather than stacked. Stacking them
+                // doubled the card's height while leaving the right half of every line empty.
+                // The feed column is the wider of the two because it carries a side, and on a
+                // bottle day the longer word "bottle".
+                null -> Row(Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1.45f)) { LastFeedContent(now, latestEndedFeed) }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) { LastNapContent(now, latestEndedNap) }
                 }
             }
         }
@@ -375,6 +381,33 @@ private fun StatusCard(
 
 @Composable
 private fun BlockSpacer() = Spacer(Modifier.height(10.dp))
+
+/** The anchor that is not running, on one line - label, then value, at body weight. */
+@Composable
+private fun OtherAnchorLine(label: String, summary: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        CardLabel(label)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            summary,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+private fun feedSummary(now: Instant, feed: FeedEntity?): String {
+    val end = feed?.endTime ?: return "none yet"
+    val detail = if (feed.type == FeedType.bOTTLE) " · bottle"
+    else feed.side?.let { " · ${it.label}" } ?: ""
+    return "${formatHoursMinutes(Duration.between(feed.startTime, now))} ago$detail"
+}
+
+private fun napSummary(now: Instant, nap: NapEntity?): String {
+    val end = nap?.endTime ?: return "none yet"
+    return "${formatHoursMinutes(Duration.between(end, now))} ago"
+}
 
 @Composable
 private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
@@ -385,13 +418,18 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
     } else {
         val isBottle = latestEndedFeed.type == FeedType.bOTTLE
         // The side stays on the "ago" line, welded to the feed reading it belongs to. It is a
-        // feed attribute, never a peer of the nap block below.
-        val detail = if (isBottle) " · bottle" else latestEndedFeed.side?.let { " · ${it.label}" } ?: ""
+        // feed attribute, never a peer of the nap column beside it.
+        //
+        // A bottle adds nothing here: the line below already identifies it, showing a single
+        // time and an amount in ml instead of a range. Spelling out "· bottle" as well made
+        // this line about 222dp in a 189dp column, so it was both redundant and too long.
+        val detail = if (isBottle) "" else latestEndedFeed.side?.let { " · ${it.label}" } ?: ""
         Text(
             // Anchored on the feed's start: intervals are measured start-to-start, so
             // "ago" + the usual every-N-hours rule points straight at the next feed.
             "${formatHoursMinutes(Duration.between(latestEndedFeed.startTime, now))} ago$detail",
             style = MaterialTheme.typography.headlineSmall,
+            maxLines = 1,
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -404,6 +442,7 @@ private fun LastFeedContent(now: Instant, latestEndedFeed: FeedEntity?) {
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
     }
 }
@@ -422,12 +461,14 @@ private fun LastNapContent(now: Instant, latestEndedNap: NapEntity?) {
             // feeds measure start-to-start because that is how feeding frequency works.
             "${formatHoursMinutes(Duration.between(end, now))} ago",
             style = MaterialTheme.typography.headlineSmall,
+            maxLines = 1,
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "${formatClockTime(latestEndedNap.startTime)} – ${formatClockTime(end)}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
     }
 }
