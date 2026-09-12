@@ -101,7 +101,7 @@ public class FeedService {
     /**
      * Starts a breast feed now, on the given side or the computed next side:
      * the opposite of the latest breast feed's side, else L. Mirrors the
-     * Android client's ToggleFeedUseCase.defaultNextSide() - keep the two in
+     * Android client's ActiveEventUseCase.defaultNextSide() - keep the two in
      * step. Returns empty when a feed is already in progress (nothing is
      * created); the id is server-generated, which is safe because creates are
      * idempotent by id and clients reconcile by range refetch.

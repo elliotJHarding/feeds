@@ -21,8 +21,13 @@ permanently in the Developer Console's testing mode - one household, no certific
   canonical trait and carries the "start/stop the feed", "is the feed running" grammar.
 - EXECUTE start creates a BREAST feed at now; side = zone override ("start the feed on the
   left") or next-side alternation (opposite of latest breast feed, else L - mirrors the
-  Android `ToggleFeedUseCase.defaultNextSide()`; keep them in step). Stop sets `endTime`
-  on the in-progress feed. Bottle feeds are deliberately app-only.
+  Android `ActiveEventUseCase.defaultNextSide()`; keep them in step). Stop sets `endTime`
+  on the in-progress feed. Bottle feeds are deliberately app-only, and so are naps.
+- A voice start also ends a running **nap**, via `InProgressEvents.endAll` - at most one event,
+  feed or nap, is in progress at a time, and the Android client relies on that. The existing
+  `alreadyStarted` refusal for an in-progress *feed* is unchanged. Without this the server would
+  be the one place able to hold two in-progress events. Naps have no device and no mode of their
+  own: a `last_nap` mode would land in the same Gemini gap recorded under Status below.
 - Query state (side of last breast feed; bucketed time-since-last-feed) rides two
   query-only Modes, computed live per QUERY by `GoogleHomeDeviceStates` - the single
   source shared by QUERY responses, EXECUTE result states, and Report State.
