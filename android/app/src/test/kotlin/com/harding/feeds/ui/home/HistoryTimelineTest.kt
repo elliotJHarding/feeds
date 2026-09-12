@@ -1,15 +1,9 @@
 package com.harding.feeds.ui.home
 
-import com.harding.feeds.client.models.FeedType
-import com.harding.feeds.client.models.Side
-import com.harding.feeds.data.local.SyncState
-import com.harding.feeds.data.local.entity.FeedEntity
-import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.ui.components.EventFilter
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -174,30 +168,4 @@ class HistoryTimelineTest {
         assertEquals(1, days.filtered(EventFilter.BOTH).size)
     }
 
-    // Fixtures
-
-    private fun feed(start: Instant, end: Instant?) = FeedEntity(
-        id = UUID.randomUUID().toString(),
-        babyId = 1L,
-        type = FeedType.bREAST,
-        side = Side.l,
-        amountMl = null,
-        startTime = start,
-        endTime = end,
-        createdBy = null,
-        createdAt = null,
-        updatedAt = null,
-        syncState = SyncState.SYNCED,
-    )
-
-    private fun nap(start: Instant, end: Instant?) = NapEntity(
-        id = UUID.randomUUID().toString(),
-        babyId = 1L,
-        startTime = start,
-        endTime = end,
-        createdBy = null,
-        createdAt = null,
-        updatedAt = null,
-        syncState = SyncState.SYNCED,
-    )
 }

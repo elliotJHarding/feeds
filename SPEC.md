@@ -113,7 +113,57 @@ Foreground polling: refetch on app open/resume plus a ~15 second poll while the 
   and whether the baby slept through it does not change that number.
 - A sticky **Feeds / Both / Naps** filter sits at the sheet's bottom edge, in the thumb arc when
   the sheet is expanded. The day header drops terms it can no longer count under a filter.
+- The sheet has **two modes**, chosen by a pill in the bottom-right corner. See below.
 - Charts, v1: **interval pattern** (gap between feeds / time-of-day view) and **duration trend** (feed minutes per day). Feeds-per-day count and L/R balance are deferred. Naps and a configurable window landed in v2, below.
+
+#### History, v2: the blocks mode
+
+The sheet draws a day in one of two ways. A pill in the bottom-right corner switches between
+them, and it shows the mode it switches **to**. It toggles rather than segments because of the
+widths: the centred filter pill reaches about 326dp of a 411dp screen, and a 44dp round pill inset
+14dp from the right edge starts at 353dp. A two-segment pill needs about 98dp and lands on the
+filter. The filter's 240dp is estimated from label metrics, not measured.
+
+- **The compact list** is the original mode. It answers "how long, and how often".
+- **The blocks mode** puts the same records on a time-of-day axis. It answers "when". The empty
+  space between two blocks is the gap.
+
+The scale is **0.5dp per minute**, so a day is 720dp. The expanded list viewport is about 737dp
+on a Pixel 10, and one screen therefore holds one day. Two finer scales were measured too: 0.75dp
+per minute shows about 16 hours, and 1.0dp shows about 12.
+
+**The block is the session, not the feed.** Over 21 days of real records, two consecutive feeds
+came as close as 0.7 minutes apart, and 29 of 281 pairs fell under 15 minutes. At this scale those
+blocks would overlap. Two consecutive sessions were never closer than 26 minutes, because the
+20-minute session rule puts a floor under the interval. That floor is what keeps the clock labels
+legible. Each feed still draws its own block inside the session, so a side switch stays visible.
+
+**Later runs downward, and the newest day is at the bottom.** The time-of-day chart already puts
+midnight at the top. `reverseLayout` gives that order and still opens on the newest records, so
+the sheet peek shows what it showed before.
+
+**A feed block has a 7dp floor.** Feed length is 1.7 minutes at the tenth percentile and 7.1 at
+the median, so below the floor a feed is a hairline. Lengths near the floor are therefore not
+comparable, and duration comparison stays the compact list's job.
+
+**A label slides down when it cannot clear the label above it.** A label line is 15dp and the
+worst measured pair sits 13dp apart, so the nudge fires on about one pair in 221. Only the label
+moves. Its block stays at its true minute, and the label states the exact clock time.
+
+**A tap opens the session.** A 7dp block is too small to hit, so the tap target is the session and
+is never under 24dp tall. A session of one feed opens the edit sheet directly. A session of
+several opens the compact card first, and a row there opens its feed. 167 of 222 measured sessions
+hold one feed.
+
+**Naps stay bands behind the feed blocks**, the treatment the charts already use, and they deepen
+under the Naps filter because nothing sits on top of them.
+
+**The mode persists; the filter still does not.** Both is a filter that hides nothing, so its reset
+costs nothing. A mode reset would put a parent who prefers blocks back on the list at every cold
+start.
+
+Known cost: a day is 720dp against roughly 190dp in the compact list, so 30 days is a long scroll.
+That is inherent to a proportional axis, and the compact list is one tap away.
 
 #### Charts, v2: naps and a window
 

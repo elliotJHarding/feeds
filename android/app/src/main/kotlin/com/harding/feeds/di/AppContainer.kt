@@ -15,6 +15,7 @@ import com.harding.feeds.domain.ActiveEventUseCase
 import com.harding.feeds.sync.ForegroundSync
 import com.harding.feeds.sync.SyncEngine
 import com.harding.feeds.sync.SyncScheduler
+import com.harding.feeds.ui.home.HistoryModeStore
 import com.harding.feeds.ui.theme.ThemeStore
 import com.harding.feeds.widget.QuickEntryNotifier
 
@@ -40,6 +41,9 @@ class AppContainer(context: Context) {
      * A theme change repaints the widget through the same hook a new feed uses.
      */
     val themeStore = ThemeStore(context, quickEntryNotifier::quickEntryChanged)
+
+    /** Which way the history sheet draws a day. A display preference, like the theme. */
+    val historyModeStore = HistoryModeStore(context)
 
     val syncEngine = SyncEngine(
         feedsApi = apiFactory.feedsApi,

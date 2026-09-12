@@ -25,6 +25,7 @@ import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -82,6 +83,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
     val bottleAmount by vm.bottleAmount.collectAsStateWithLifecycle()
     val history by vm.history.collectAsStateWithLifecycle()
     val historyFilter by vm.historyFilter.collectAsStateWithLifecycle()
+    val historyMode by vm.historyMode.collectAsStateWithLifecycle()
 
     var editing by remember { mutableStateOf<EditTarget?>(null) }
     var showInvite by remember { mutableStateOf(false) }
@@ -101,12 +103,27 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
             // is used occasionally. Floating keeps every pixel of the peek showing history,
             // and puts the pill in the thumb arc when the sheet is expanded.
             Box(Modifier.fillMaxSize()) {
-                HistoryList(
-                    days = visibleDays,
-                    filter = historyFilter,
-                    onFeedTap = { editing = EditTarget.Feed(it) },
-                    onNapTap = { editing = EditTarget.Nap(it) },
-                )
+                when (historyMode) {
+                    HistoryMode.LIST -> HistoryList(
+                        days = visibleDays,
+                        filter = historyFilter,
+                        onFeedTap = { editing = EditTarget.Feed(it) },
+                        onNapTap = { editing = EditTarget.Nap(it) },
+                    )
+
+                    HistoryMode.BLOCKS -> HistoryBlocks(
+                        days = visibleDays,
+                        filter = historyFilter,
+                        // Minute granularity, not the ticking second: a running block only needs
+                        // to grow once a minute, and a primitive lets Compose skip the rest.
+                        nowEpochMinute = now.epochSecond / 60,
+                        onSessionTap = { session ->
+                            editing = session.feeds.singleOrNull()?.let(EditTarget::Feed)
+                                ?: EditTarget.Session(session)
+                        },
+                        onNapTap = { editing = EditTarget.Nap(it) },
+                    )
+                }
                 EventFilterPill(
                     selected = historyFilter,
                     onSelect = vm::selectHistoryFilter,
@@ -115,6 +132,15 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
                         .align(Alignment.BottomCenter)
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                         .padding(bottom = 14.dp),
+                )
+                // The corner, clear of the centred filter - HistoryModePill has the widths.
+                HistoryModePill(
+                    selected = historyMode,
+                    onSelect = vm::selectHistoryMode,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(end = 14.dp, bottom = 14.dp),
                 )
             }
         },
@@ -194,6 +220,12 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
             onDismiss = { editing = null },
         )
 
+        is EditTarget.Session -> SessionSheet(
+            session = target.session,
+            onFeedTap = { editing = EditTarget.Feed(it) },
+            onDismiss = { editing = null },
+        )
+
         null -> Unit
     }
 
@@ -210,6 +242,36 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> U
 private sealed interface EditTarget {
     data class Feed(val feed: FeedEntity) : EditTarget
     data class Nap(val nap: NapEntity) : EditTarget
+
+    /** A tapped block holding more than one feed, so which feed to edit is still open. */
+    data class Session(val session: FeedSession) : EditTarget
+}
+
+/**
+ * The feeds inside one block, when the block holds more than one.
+ *
+ * Blocks mode draws a session's feeds at their true minutes, and inside a session those are
+ * minutes apart - at 0.5dp a minute there is no per-feed tap target left. So the block opens the
+ * session the way the compact list already draws it: the same card, the same rows, the same
+ * pauses. A row opens its feed. Three quarters of recorded sessions hold one feed and go straight
+ * to the edit sheet without passing through here.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SessionSheet(
+    session: FeedSession,
+    onFeedTap: (FeedEntity) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(
+            "Which feed?",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp),
+        )
+        SessionCard(session, onFeedTap)
+        Spacer(Modifier.height(28.dp))
+    }
 }
 
 /** Brand on the left, actions on the right - a real top bar, floating over the entry surface. */

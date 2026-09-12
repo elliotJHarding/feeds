@@ -67,6 +67,14 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
     private val historyFilterState = MutableStateFlow(EventFilter.BOTH)
     val historyFilter: StateFlow<EventFilter> = historyFilterState
 
+    /**
+     * Unlike the filter, this is persisted. Both is a filter that hides nothing, so a reset costs
+     * nothing; a mode reset would put a parent who prefers blocks back on the list at every cold
+     * start. See [com.harding.feeds.ui.home.HistoryModeStore].
+     */
+    private val historyModeState = MutableStateFlow(container.historyModeStore.mode)
+    val historyMode: StateFlow<HistoryMode> = historyModeState
+
     init {
         viewModelScope.launch {
             activeEvent.collect { if (it != null) entryModeState.value = EntryMode.BREAST }
@@ -143,6 +151,11 @@ class HomeViewModel(private val container: AppContainer) : ViewModel() {
 
     fun selectHistoryFilter(filter: EventFilter) {
         historyFilterState.value = filter
+    }
+
+    fun selectHistoryMode(mode: HistoryMode) {
+        container.historyModeStore.mode = mode
+        historyModeState.value = mode
     }
 
     /** Log a bottle as a completed point event at the scrubbed time; one-shot back to breast. */

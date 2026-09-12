@@ -144,14 +144,14 @@ fun HistoryList(
     }
 }
 
-private fun emptyText(filter: EventFilter): String = when (filter) {
+internal fun emptyText(filter: EventFilter): String = when (filter) {
     EventFilter.FEEDS -> "Feeds you log will appear here"
     EventFilter.NAPS -> "Naps you log will appear here"
     EventFilter.BOTH -> "Feeds and naps you log will appear here"
 }
 
 @Composable
-private fun DayHeader(day: DayHistory, today: LocalDate) {
+internal fun DayHeader(day: DayHistory, today: LocalDate) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,7 +201,7 @@ private fun daySummary(day: DayHistory): String {
 }
 
 @Composable
-private fun SessionCard(session: FeedSession, onFeedTap: (FeedEntity) -> Unit) {
+internal fun SessionCard(session: FeedSession, onFeedTap: (FeedEntity) -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -506,4 +506,4 @@ private const val GapDotMinutes = 30L
 private const val GapDotMax = 9
 
 // Pill height (about 42dp) plus its 14dp bottom margin, plus a little air.
-private val FloatingFilterClearance = 72.dp
+internal val FloatingFilterClearance = 72.dp
