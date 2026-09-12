@@ -1,6 +1,8 @@
-# Build the feeds server image and deploy it, mirroring meals_server's workflow.
-# Builds on GitHub runners (no local Docker), pushes to grubplanner.co.uk:32000,
-# then rolls the deployment so the pod re-pulls :latest.
+# Build the feeds server image, mirroring meals_server's workflow.
+# Builds on GitHub runners (no local Docker) and pushes to grubplanner.co.uk:32000.
+# It does NOT roll the deployment - see the note at the end of this file. The pod
+# keeps running its current image until somebody rolls it by hand, which is what
+# makes "server first, app second" controllable.
 name: Build Image
 
 on:
@@ -21,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
