@@ -70,7 +70,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
+fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit, onOpenTheme: () -> Unit) {
     val now by rememberNow()
     val baby by vm.baby.collectAsStateWithLifecycle()
     val activeEvent by vm.activeEvent.collectAsStateWithLifecycle()
@@ -152,6 +152,7 @@ fun HomeScreen(vm: HomeViewModel, onOpenCharts: () -> Unit) {
             )
             TopBar(
                 onOpenCharts = onOpenCharts,
+                onOpenTheme = onOpenTheme,
                 onInvite = {
                     showInvite = true
                     vm.loadInviteCode()
@@ -254,7 +255,12 @@ private fun HistoryFilterPill(
 
 /** Brand on the left, actions on the right - a real top bar, floating over the entry surface. */
 @Composable
-private fun TopBar(onOpenCharts: () -> Unit, onInvite: () -> Unit, modifier: Modifier = Modifier) {
+private fun TopBar(
+    onOpenCharts: () -> Unit,
+    onOpenTheme: () -> Unit,
+    onInvite: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier
             .fillMaxWidth()
@@ -271,6 +277,7 @@ private fun TopBar(onOpenCharts: () -> Unit, onInvite: () -> Unit, modifier: Mod
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ActionIcon(onClick = onOpenCharts, description = "Charts") { ChartGlyph(it) }
+            ActionIcon(onClick = onOpenTheme, description = "Theme") { ThemeGlyph(it) }
             ActionIcon(onClick = onInvite, description = "Invite partner") { InviteGlyph(it) }
         }
     }
@@ -313,6 +320,27 @@ private fun ChartGlyph(color: Color) {
                 cornerRadius = r,
             )
         }
+    }
+}
+
+/**
+ * A circle with one half filled - appearance. The glyph takes a single tint like its siblings,
+ * so it cannot show the four accents; a split circle says "how this looks" in one colour.
+ */
+@Composable
+private fun ThemeGlyph(color: Color) {
+    Canvas(Modifier.size(20.dp)) {
+        val radius = size.minDimension * 0.42f
+        val centre = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(color, radius, centre, style = Stroke(width = size.height * 0.11f))
+        drawArc(
+            color = color,
+            startAngle = 90f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(centre.x - radius, centre.y - radius),
+            size = Size(radius * 2f, radius * 2f),
+        )
     }
 }
 

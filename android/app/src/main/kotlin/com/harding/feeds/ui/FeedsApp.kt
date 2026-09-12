@@ -20,12 +20,15 @@ import com.harding.feeds.ui.home.HomeScreen
 import com.harding.feeds.ui.home.HomeViewModel
 import com.harding.feeds.ui.onboarding.OnboardingScreen
 import com.harding.feeds.ui.onboarding.OnboardingViewModel
+import com.harding.feeds.ui.settings.ThemeEditorScreen
+import com.harding.feeds.ui.settings.ThemeScreen
+import com.harding.feeds.ui.settings.ThemeViewModel
 import com.harding.feeds.ui.signin.SignInScreen
 
 /**
- * Top level: the phase gate (signed out -> onboarding -> ready) sits above a two-route
- * NavHost (home, charts). History and feed editing live inside home, so the whole app is
- * reachable one gesture from the entry surface.
+ * Top level: the phase gate (signed out -> onboarding -> ready) sits above a four-route
+ * NavHost (home, charts, theme, and the theme editor). History and feed editing live inside
+ * home, so the whole app is reachable one gesture from the entry surface.
  */
 @Composable
 fun FeedsApp(container: AppContainer) {
@@ -52,12 +55,29 @@ private fun ReadyNavHost(container: AppContainer) {
             HomeScreen(
                 vm = viewModel { HomeViewModel(container) },
                 onOpenCharts = { navController.navigate("charts") },
+                onOpenTheme = { navController.navigate("theme") },
             )
         }
         composable("charts") {
             ChartsScreen(
                 vm = viewModel { ChartsViewModel(container) },
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable("theme") {
+            ThemeScreen(
+                vm = viewModel { ThemeViewModel(container) },
+                onBack = { navController.popBackStack() },
+                onCustomise = { navController.navigate("theme/custom") },
+            )
+        }
+        // Its own view model, seeded from the store when it is built. The two theme routes hold
+        // no shared state: the store is the one source, and the editor's draft is its own.
+        composable("theme/custom") {
+            ThemeEditorScreen(
+                vm = viewModel { ThemeViewModel(container) },
+                onBack = { navController.popBackStack() },
+                onSaved = { navController.popBackStack() },
             )
         }
     }

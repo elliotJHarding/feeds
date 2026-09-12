@@ -100,6 +100,16 @@ Build config comes from `android/gradle.properties`:
 - `feeds.googleWebClientId` → `BuildConfig.GOOGLE_WEB_CLIENT_ID` (the shared Google **Web** client
   id, used as the sign-in `serverClientId` and the server's token audience — both builds).
 
+### Colour lives in one file
+
+Every hardcoded colour in `android/app/src/main` is in `ui/theme/Palette.kt`, and a search for
+`Color(0x` proves it. A theme is seven colours; `ui/theme/Derive.kt` derives the ~30 Material
+slots and every text colour from them, by measured WCAG contrast rather than by choice.
+
+Do not add a colour constant anywhere else, and do not hold a theme colour in a top-level `val` —
+that freezes at class-load time and never follows a theme change. Read `ThemeState.palette`, which
+is snapshot state, inside the composition or the draw.
+
 ## Local development & on-device testing
 
 Debug and release install **side by side on one device** — debug has a distinct applicationId

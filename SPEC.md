@@ -52,7 +52,7 @@ Native **Kotlin + Jetpack Compose**. Both phones are Android (verified). Chosen 
 
 ### Entry screen
 
-Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme default):
+Time-first, one-thumb, usable eyes-half-closed at 3am (dark theme by default, see Theme below):
 
 - The **editable feed time is the hero element**, not a live wall clock and not a running
   stopwatch (revised after dev testing: a parent is usually mid-feed by the time they reach
@@ -144,6 +144,35 @@ Monorepo (this repo): `android/`, `server/`, `model/`, `k8s/`. Meals' multi-repo
 
 One-off import of the existing notes-app history: export/paste the notes text, parse it with a throwaway script (parse output eyeball-verified before load), insert via SQL or an admin endpoint. Not an in-app feature.
 
+### Theme
+
+A parent picks the app's colours on a theme screen, reached from a third icon in the home top
+bar. Nine presets, six dark and three light, plus one hand-made theme.
+
+- A theme is **seven colours**: the background, the chrome accent, the four event accents (L, R,
+  bottle, nap) and the stop colour. A preset and a hand-made theme are the same type, so one code
+  path serves both.
+- **Text is never picked.** The app derives every foreground by WCAG contrast ratio from the
+  ground it sits on, and picks whichever of the theme's two tones reads better. This is what
+  makes free choice safe: no six colours a parent picks can hide the words. It also removed a
+  latent defect — the old single fixed near-black glyph colour held only because every accent the
+  app shipped was light.
+- **The default is unchanged.** Candlelight holds exactly the colours the app shipped with, and
+  the derivation is calibrated against the hand-tuned scheme it replaces. Measured over the 15
+  Material slots the app reads, 7 land exactly and the worst drifts by 5/255.
+- **The theme stays on one device**, in `SharedPreferences`. It is a display preference, not
+  family data, so the two parents can differ. No contract change, no server field, nothing syncs.
+- The **dark-only commitment is revised, not dropped.** The nocturnal default stands, and the
+  reason still holds: warm dark light preserves night vision at 3am. A parent who reads the
+  history in daylight now has an answer as well.
+- The widget follows the theme through the same refresh hook a new feed uses. The Quick Settings
+  tile carries no colour and is unaffected.
+- A light theme forced a fix: the app draws edge to edge and nothing set the system-bar
+  appearance, so white status-bar icons would vanish on a light ground.
+- The editor **warns and does not refuse.** Two event accents that converge in both hue and
+  lightness raise a line of text. Telling a nap row from a side row at 3am is what those colours
+  are for, but the choice stays the parent's.
+
 ## Out of scope for v1
 
 - FCM push / background realtime
@@ -154,6 +183,11 @@ One-off import of the existing notes-app history: export/paste the notes text, p
   mode state, so a `last_nap` mode would land in that same gap. The integration already has the
   precedent that a type can stay app-only: bottles are deliberately app-only too. Voice start and
   stop still end a running nap, so the server cannot contradict the one-event rule.
+- **A shared theme.** The theme is per device by decision, not by omission. Making it family-wide
+  would need a contract change, a server field and sync, and it would let one parent's choice
+  override the other's with no way to differ.
+- **More than one saved custom theme.** One editable slot. A second would need a naming and
+  management UI for a preference a parent sets and forgets.
 - iOS and web clients
 
 Shipped since v1, so no longer out of scope: bottle feed entry UI (commit `8d77b7b`).
