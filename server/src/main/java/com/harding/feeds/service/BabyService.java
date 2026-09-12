@@ -9,17 +9,17 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
 
-import static com.harding.feeds.service.GroupScope.notFound;
 import static com.harding.feeds.service.GroupScope.requireGroup;
-import static com.harding.feeds.service.GroupScope.requireInGroup;
 
 @Service
 public class BabyService {
 
     private final BabyRepository babyRepository;
+    private final BabyScope babyScope;
 
-    public BabyService(BabyRepository babyRepository) {
+    public BabyService(BabyRepository babyRepository, BabyScope babyScope) {
         this.babyRepository = babyRepository;
+        this.babyScope = babyScope;
     }
 
     @Transactional(readOnly = true)
@@ -34,9 +34,7 @@ public class BabyService {
 
     @Transactional
     public Baby update(AppUser user, Long id, String name, LocalDate dateOfBirth) {
-        Baby baby = babyRepository.findById(id)
-                .orElseThrow(() -> notFound("Baby not found"));
-        requireInGroup(user, baby.getFamilyGroup(), "Baby");
+        Baby baby = babyScope.require(user, id);
 
         baby.setName(name);
         baby.setDateOfBirth(dateOfBirth);

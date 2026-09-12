@@ -3,16 +3,19 @@ package com.harding.feeds.support;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.harding.feeds.dto.FeedDto;
 import com.harding.feeds.dto.FeedType;
+import com.harding.feeds.dto.NapDto;
 import com.harding.feeds.dto.Side;
 import com.harding.feeds.entity.AppUser;
 import com.harding.feeds.entity.Baby;
 import com.harding.feeds.entity.FamilyGroup;
 import com.harding.feeds.entity.Feed;
+import com.harding.feeds.entity.Nap;
 import com.harding.feeds.entity.PublicDetails;
 import com.harding.feeds.repository.AppUserRepository;
 import com.harding.feeds.repository.BabyRepository;
 import com.harding.feeds.repository.FamilyGroupRepository;
 import com.harding.feeds.repository.FeedRepository;
+import com.harding.feeds.repository.NapRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -59,6 +62,9 @@ public abstract class IntegrationTest {
     @Autowired
     protected FeedRepository feedRepository;
 
+    @Autowired
+    protected NapRepository napRepository;
+
     // Fixtures
 
     protected FamilyGroup group() {
@@ -96,6 +102,19 @@ public abstract class IntegrationTest {
                 .babyId(babyId)
                 .type(FeedType.BREAST)
                 .side(side)
+                .startTime(startTime)
+                .endTime(endTime);
+    }
+
+    /** A persisted nap; endTime null means in progress. */
+    protected Nap savedNap(Baby baby, AppUser createdBy, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return napRepository.save(new Nap(UUID.randomUUID(), baby, startTime, endTime, createdBy));
+    }
+
+    protected NapDto napDto(UUID id, Long babyId, OffsetDateTime startTime, OffsetDateTime endTime) {
+        return new NapDto()
+                .id(id)
+                .babyId(babyId)
                 .startTime(startTime)
                 .endTime(endTime);
     }

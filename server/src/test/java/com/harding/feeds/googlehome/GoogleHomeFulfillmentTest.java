@@ -4,6 +4,7 @@ import com.harding.feeds.entity.AppUser;
 import com.harding.feeds.entity.Baby;
 import com.harding.feeds.entity.FamilyGroup;
 import com.harding.feeds.entity.Feed;
+import com.harding.feeds.entity.Nap;
 import com.harding.feeds.repository.GoogleHomeLinkRepository;
 import com.harding.feeds.support.IntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
@@ -144,6 +145,23 @@ class GoogleHomeFulfillmentTest extends IntegrationTest {
         execute(Map.of("start", true))
                 .andExpect(commandPath("status").value("ERROR"))
                 .andExpect(commandPath("errorCode").value("alreadyStarted"));
+    }
+
+    /**
+     * A voice start is still a start, so it ends a running nap like any other.
+     * Without this the server is the one place that could hold two in-progress
+     * events, which is the invariant the Android client relies on.
+     */
+    @Test
+    void startWhileANapIsRunningEndsTheNapAndSucceeds() throws Exception {
+        Nap nap = savedNap(baby, parent, OffsetDateTime.now().minusMinutes(40), null);
+
+        execute(Map.of("start", true))
+                .andExpect(commandPath("status").value("SUCCESS"))
+                .andExpect(commandPath("states.isRunning").value(true));
+
+        assertThat(napRepository.findById(nap.getId())).get()
+                .extracting(Nap::getEndTime).isNotNull();
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.harding.feeds.service;
 import com.harding.feeds.entity.AppUser;
 import com.harding.feeds.entity.Baby;
 import com.harding.feeds.entity.Feed;
-import com.harding.feeds.repository.BabyRepository;
 import com.harding.feeds.repository.FeedRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -26,20 +25,23 @@ import static com.harding.feeds.service.GroupScope.requireInGroup;
 public class FeedService {
 
     private final FeedRepository feedRepository;
-    private final BabyRepository babyRepository;
+    private final BabyScope babyScope;
+    private final InProgressEvents inProgressEvents;
     private final ApplicationEventPublisher eventPublisher;
 
-    public FeedService(FeedRepository feedRepository, BabyRepository babyRepository,
+    public FeedService(FeedRepository feedRepository, BabyScope babyScope,
+                       InProgressEvents inProgressEvents,
                        ApplicationEventPublisher eventPublisher) {
         this.feedRepository = feedRepository;
-        this.babyRepository = babyRepository;
+        this.babyScope = babyScope;
+        this.inProgressEvents = inProgressEvents;
         this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
     public List<Feed> getFeeds(AppUser user, Long babyId, OffsetDateTime from, OffsetDateTime to,
                                OffsetDateTime updatedSince) {
-        Baby baby = scopedBaby(user, babyId);
+        Baby baby = babyScope.require(user, babyId);
         return feedRepository.findForBaby(baby, from, to, updatedSince);
     }
 
@@ -58,7 +60,14 @@ public class FeedService {
             return new Creation(feed, false);
         }
 
-        Baby baby = scopedBaby(user, babyId);
+        Baby baby = babyScope.require(user, babyId);
+        // Only a feed that is itself in progress claims the exclusive slot; a
+        // completed feed - every bottle, and any retrospective log - must not
+        // end a live nap. Placed after the replay return above, so a resent
+        // create never re-ends an event the user has since restarted.
+        if (endTime == null) {
+            inProgressEvents.endAll(baby, startTime);
+        }
         Feed feed = feedRepository.save(new Feed(id, baby, type, side, amountMl, startTime, endTime, user));
         eventPublisher.publishEvent(new FeedChangedEvent(baby));
         return new Creation(feed, true);
@@ -70,7 +79,7 @@ public class FeedService {
                        Integer amountMl, OffsetDateTime startTime, OffsetDateTime endTime) {
         Feed feed = scopedFeed(user, id);
 
-        feed.setBaby(scopedBaby(user, babyId));
+        feed.setBaby(babyScope.require(user, babyId));
         feed.setType(type);
         feed.setSide(side);
         feed.setAmountMl(amountMl);
@@ -99,14 +108,20 @@ public class FeedService {
      */
     @Transactional
     public Optional<Feed> startVoiceFeed(AppUser user, Long babyId, Feed.Side sideOverride) {
-        Baby baby = scopedBaby(user, babyId);
+        Baby baby = babyScope.require(user, babyId);
         if (feedRepository.findFirstByBabyAndEndTimeIsNullOrderByStartTimeDesc(baby).isPresent()) {
             return Optional.empty();
         }
 
+        OffsetDateTime now = OffsetDateTime.now();
+        // A voice start is still a start, so it ends a running nap like any
+        // other. Without this the server is the one place that can hold two
+        // in-progress events, which is the invariant the client relies on.
+        inProgressEvents.endAll(baby, now);
+
         Feed.Side side = sideOverride != null ? sideOverride : nextSide(baby);
         Feed feed = feedRepository.save(new Feed(UUID.randomUUID(), baby, Feed.Type.BREAST, side, null,
-                OffsetDateTime.now(), null, user));
+                now, null, user));
         eventPublisher.publishEvent(new FeedChangedEvent(baby));
         return Optional.of(feed);
     }
@@ -117,7 +132,7 @@ public class FeedService {
      */
     @Transactional
     public Optional<Feed> stopVoiceFeed(AppUser user, Long babyId) {
-        Baby baby = scopedBaby(user, babyId);
+        Baby baby = babyScope.require(user, babyId);
         return feedRepository.findFirstByBabyAndEndTimeIsNullOrderByStartTimeDesc(baby)
                 .map(feed -> {
                     OffsetDateTime now = OffsetDateTime.now();
@@ -140,13 +155,6 @@ public class FeedService {
                 .orElseThrow(() -> notFound("Feed not found"));
         requireInGroup(user, feed.getBaby().getFamilyGroup(), "Feed");
         return feed;
-    }
-
-    private Baby scopedBaby(AppUser user, Long babyId) {
-        Baby baby = babyRepository.findById(babyId)
-                .orElseThrow(() -> notFound("Baby not found"));
-        requireInGroup(user, baby.getFamilyGroup(), "Baby");
-        return baby;
     }
 
     /** Outcome of an idempotent create: {@code created} is false on a replay. */
