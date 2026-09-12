@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -47,20 +49,39 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.harding.feeds.client.models.Side
 import com.harding.feeds.ui.bottleColor
+import com.harding.feeds.ui.components.EventFilter
+import com.harding.feeds.ui.components.EventFilterPill
 import com.harding.feeds.ui.label
+import com.harding.feeds.ui.napColor
 import com.harding.feeds.ui.sideColor
 import java.time.LocalDate
+import kotlin.math.ceil
 
 /**
- * The two v1 charts (SPEC): interval pattern as a time-of-day plot - each feed drawn at its
- * time of day per day column, so the empty vertical space between marks IS the gap between
- * feeds - and a duration trend of feed minutes per day. Drawn with plain Compose Canvas:
- * two single-series charts don't justify a chart library dependency.
+ * Charts over a chosen window, filtered to feeds, naps or both.
+ *
+ * The time-of-day plot is the one that carries the reading: each event drawn at its time of day
+ * per day column, so the empty vertical space between marks IS the gap. Naps are wide bands
+ * behind the feed marks, which is the classic newborn raster - you watch the pattern consolidate
+ * rather than read a number.
+ *
+ * That chart is also the one that gets busy, which is what the filter is for. It uses the same
+ * Feeds / Both / Naps control as the day timeline, because both answer the same question and a
+ * parent should not have to learn two of them.
+ *
+ * Drawn with plain Compose Canvas: a handful of single-series charts do not justify a chart
+ * library dependency.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChartsScreen(vm: ChartsViewModel, onBack: () -> Unit) {
     val data by vm.data.collectAsStateWithLifecycle()
+    val filter by vm.filter.collectAsStateWithLifecycle()
+    val window by vm.window.collectAsStateWithLifecycle()
+
+    val showFeeds = filter != EventFilter.NAPS
+    val showNaps = filter != EventFilter.FEEDS
+    val span = window.label
 
     Scaffold(
         topBar = {
@@ -71,6 +92,9 @@ fun ChartsScreen(vm: ChartsViewModel, onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                // The window lives in the bar rather than the body: two pills stacked over the
+                // first chart pushed it off the screen on a phone.
+                actions = { WindowPicker(window, vm::selectWindow) },
             )
         },
     ) { padding ->
@@ -81,52 +105,143 @@ fun ChartsScreen(vm: ChartsViewModel, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
         ) {
-            SideLegend()
+            EventFilterPill(
+                selected = filter,
+                onSelect = vm::selectFilter,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
             Spacer(Modifier.height(16.dp))
+
+            Legend(filter)
+            Spacer(Modifier.height(16.dp))
+
             SectionHeader(
                 title = "Time of day",
-                caption = "Each mark is a feed at its time of day - vertical gaps show the interval pattern",
+                caption = when (filter) {
+                    EventFilter.FEEDS ->
+                        "Each mark is a feed at its time of day - vertical gaps show the interval pattern"
+                    EventFilter.NAPS -> "Each band is a nap at its time of day"
+                    EventFilter.BOTH -> "Feeds as marks, naps as bands behind them"
+                },
             )
-            TimeOfDayChart(data, Modifier.fillMaxWidth().height(320.dp))
+            TimeOfDayChart(data, filter, Modifier.fillMaxWidth().height(320.dp))
 
-            Spacer(Modifier.height(32.dp))
+            if (showFeeds) {
+                Spacer(Modifier.height(32.dp))
+                SectionHeader("Feed minutes per day", "Total time feeding per day over $span")
+                if (!data.minutesPerDay.map { it.total }.hasReading()) {
+                    EmptyNote("No feed minutes logged in the last $span")
+                } else {
+                    FeedMinutesChart(data, Modifier.fillMaxWidth().height(220.dp))
+                }
 
-            SectionHeader(
-                title = "Feed minutes per day",
-                caption = "Total time feeding per day over the last two weeks",
-            )
-            DurationTrendChart(data, Modifier.fillMaxWidth().height(220.dp))
+                Spacer(Modifier.height(32.dp))
+                SectionHeader("Average feed length", "Mean length of each day's feeds over $span")
+                if (!data.avgMinutesPerDay.hasReading()) {
+                    EmptyNote("No feed lengths recorded in the last $span")
+                } else {
+                    TrendChart(
+                        days = data.days,
+                        values = data.avgMinutesPerDay,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.fillMaxWidth().height(220.dp),
+                    )
+                }
+            }
 
-            Spacer(Modifier.height(32.dp))
+            if (showNaps) {
+                Spacer(Modifier.height(32.dp))
+                SectionHeader("Slept minutes per day", "Total time asleep per day over $span")
+                // An axis with no bars under it reads as broken. Say why instead.
+                if (!data.sleptMinutesPerDay.hasReading()) {
+                    EmptyNote("No nap minutes logged in the last $span")
+                } else {
+                    SleptMinutesChart(data, Modifier.fillMaxWidth().height(220.dp))
+                }
 
-            SectionHeader(
-                title = "Average feed length",
-                caption = "Mean length of each day's feeds over the last two weeks",
-            )
-            AvgFeedLengthChart(data, Modifier.fillMaxWidth().height(220.dp))
+                Spacer(Modifier.height(32.dp))
+                SectionHeader("Average nap length", "Mean length of each day's naps over $span")
+                if (!data.avgNapMinutesPerDay.hasReading()) {
+                    EmptyNote("No nap lengths recorded in the last $span")
+                } else {
+                    TrendChart(
+                        days = data.days,
+                        values = data.avgNapMinutesPerDay,
+                        color = napColor,
+                        modifier = Modifier.fillMaxWidth().height(220.dp),
+                    )
+                }
+            }
 
             Spacer(Modifier.height(32.dp))
         }
     }
 }
 
-/** L/R/bottle colour key, so the mark and bar colours are interpretable. */
+/**
+ * Whether a series is worth a chart at all.
+ *
+ * Null is not the only empty. A zero-length event is a completed one, so it yields an average of
+ * 0 rather than null, and the chart then drew a lone "1m" gridline over a dot on the baseline.
+ * Only a reading above zero is worth an axis.
+ */
+private fun Collection<Int?>.hasReading(): Boolean = any { (it ?: 0) > 0 }
+
+/** Stands in for a chart that has nothing to draw, so a bare axis never reads as a fault. */
 @Composable
-private fun SideLegend() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        (listOf(Side.l, Side.r).map { "${it.label} side" to it.sideColor } + ("bottle" to bottleColor))
-            .forEach { (label, color) ->
-                Box(
-                    Modifier.size(12.dp).clip(CircleShape).background(color),
-                )
-                Spacer(Modifier.width(6.dp))
+private fun EmptyNote(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(vertical = 24.dp),
+    )
+}
+
+/** 7d / 14d / 30d, in the app bar. The cap is measured - see [ChartsViewModel.Window]. */
+@Composable
+private fun WindowPicker(selected: ChartsViewModel.Window, onSelect: (ChartsViewModel.Window) -> Unit) {
+    Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        ChartsViewModel.Window.entries.forEach { window ->
+            val isSelected = window == selected
+            Surface(
+                onClick = { onSelect(window) },
+                shape = CircleShape,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            ) {
                 Text(
-                    label,
+                    window.label,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 )
-                Spacer(Modifier.width(20.dp))
             }
+        }
+    }
+}
+
+/** Colour key for whatever the filter is showing, so the marks are interpretable. */
+@Composable
+private fun Legend(filter: EventFilter) {
+    val keys = buildList {
+        if (filter != EventFilter.NAPS) {
+            addAll(listOf(Side.l, Side.r).map { "${it.label} side" to it.sideColor })
+            add("bottle" to bottleColor)
+        }
+        if (filter != EventFilter.FEEDS) add("nap" to napColor)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        keys.forEach { (label, color) ->
+            Box(Modifier.size(12.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(20.dp))
+        }
     }
 }
 
@@ -142,7 +257,11 @@ private fun SectionHeader(title: String, caption: String) {
 }
 
 @Composable
-private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier = Modifier) {
+private fun TimeOfDayChart(
+    data: ChartData,
+    filter: EventFilter,
+    modifier: Modifier = Modifier,
+) {
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall
         .copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -155,6 +274,9 @@ private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier =
     val rightColor = Side.r.sideColor
     val unknownColor = MaterialTheme.colorScheme.onSurfaceVariant
     val bottleDotColor = bottleColor
+    val napBandColor = napColor
+    val showFeeds = filter != EventFilter.NAPS
+    val showNaps = filter != EventFilter.FEEDS
 
     Canvas(modifier) {
         val leftPad = 34.dp.toPx()
@@ -189,16 +311,37 @@ private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier =
         drawDayLabels(data.days, textMeasurer, labelStyle, leftPad, columnWidth)
 
         val minLength = 3.dp.toPx()
+
+        // Naps first, so the feed marks land on top of them. A nap band is wider than a feed
+        // mark and softened, so it reads as ground rather than as another event on the same
+        // scale - a nap is hours where a feed is minutes.
+        if (showNaps) {
+            val bandWidth = minOf(columnWidth * 0.62f, 14.dp.toPx())
+            data.napSegments.forEach { nap ->
+                val x = leftPad + columnWidth * (nap.dayIndex + 0.5f)
+                val y0 = topPad + plotHeight * nap.startMinute / MinutesPerDay
+                val y1 = maxOf(topPad + plotHeight * nap.endMinute / MinutesPerDay, y0 + minLength)
+                drawRoundRect(
+                    color = napBandColor.copy(alpha = if (showFeeds) 0.45f else 0.85f),
+                    topLeft = Offset(x - bandWidth / 2f, y0),
+                    size = Size(bandWidth, y1 - y0),
+                    cornerRadius = CornerRadius(bandWidth / 2f, bandWidth / 2f),
+                )
+            }
+        }
+
+        if (!showFeeds) return@Canvas
+
         data.segments.forEach { segment ->
             val x = leftPad + columnWidth * (segment.dayIndex + 0.5f)
-            val y0 = topPad + plotHeight * segment.startMinute / MINUTES_PER_DAY
+            val y0 = topPad + plotHeight * segment.startMinute / MinutesPerDay
             if (segment.isBottle) {
                 // A bottle is a point event - a dot, so top-ups read against the breast
                 // segments without pretending to have a duration.
                 drawCircle(bottleDotColor, radius = 4.dp.toPx(), center = Offset(x, y0))
                 return@forEach
             }
-            val y1 = maxOf(topPad + plotHeight * segment.endMinute / MINUTES_PER_DAY, y0 + minLength)
+            val y1 = maxOf(topPad + plotHeight * segment.endMinute / MinutesPerDay, y0 + minLength)
             val color = when (segment.side) {
                 Side.l -> leftColor
                 Side.r -> rightColor
@@ -209,15 +352,49 @@ private fun TimeOfDayChart(data: ChartsViewModel.ChartData, modifier: Modifier =
     }
 }
 
+/** Feed minutes per day, stacked by side. */
 @Composable
-private fun DurationTrendChart(data: ChartsViewModel.ChartData, modifier: Modifier = Modifier) {
+private fun FeedMinutesChart(data: ChartData, modifier: Modifier = Modifier) {
+    val leftColor = Side.l.sideColor
+    val rightColor = Side.r.sideColor
+    val unknownColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    StackedBarChart(
+        days = data.days,
+        bars = data.minutesPerDay.map { day ->
+            listOf(day.left to leftColor, day.right to rightColor, day.unknown to unknownColor)
+        },
+        modifier = modifier,
+    )
+}
+
+/** Slept minutes per day. One series: a nap has no side to stack. */
+@Composable
+private fun SleptMinutesChart(data: ChartData, modifier: Modifier = Modifier) {
+    val color = napColor
+    StackedBarChart(
+        days = data.days,
+        bars = data.sleptMinutesPerDay.map { listOf(it to color) },
+        modifier = modifier,
+    )
+}
+
+/**
+ * A bar per day, stacked from the baseline up in the order given.
+ *
+ * Shared by the feed and nap totals. Feeds pass three parts and naps pass one, which is the only
+ * difference between the two charts and not enough to justify two copies of the axis code.
+ */
+@Composable
+private fun StackedBarChart(
+    days: List<LocalDate>,
+    bars: List<List<Pair<Int, Color>>>,
+    modifier: Modifier = Modifier,
+) {
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall
         .copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val leftColor = Side.l.sideColor
-    val rightColor = Side.r.sideColor
-    val unknownColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     Canvas(modifier) {
         val leftPad = 34.dp.toPx()
@@ -226,7 +403,7 @@ private fun DurationTrendChart(data: ChartsViewModel.ChartData, modifier: Modifi
         val plotWidth = size.width - leftPad
         val plotHeight = size.height - bottomPad - topPad
 
-        val maxTotal = data.minutesPerDay.maxOfOrNull { it.total } ?: 0
+        val maxTotal = bars.maxOfOrNull { bar -> bar.sumOf { it.first } } ?: 0
         val step = gridStep(maxTotal)
         val axisMax = (maxTotal / step + 1) * step
 
@@ -243,37 +420,44 @@ private fun DurationTrendChart(data: ChartsViewModel.ChartData, modifier: Modifi
             value += step
         }
 
-        val columnWidth = plotWidth / data.days.size
-        drawDayLabels(data.days, textMeasurer, labelStyle, leftPad, columnWidth)
+        val columnWidth = plotWidth / days.size
+        drawDayLabels(days, textMeasurer, labelStyle, leftPad, columnWidth)
 
         val barWidth = columnWidth * 0.55f
-        data.minutesPerDay.forEachIndexed { index, dm ->
-            if (dm.total == 0) return@forEachIndexed
+        bars.forEachIndexed { index, parts ->
+            if (parts.sumOf { it.first } == 0) return@forEachIndexed
             val left = leftPad + columnWidth * (index + 0.5f) - barWidth / 2f
-            // Stack the sides from the baseline up: left, then right, then unknown.
+            // Stack from the baseline up, in the order the caller gave.
             var yBottom = topPad + plotHeight
-            listOf(dm.left to leftColor, dm.right to rightColor, dm.unknown to unknownColor)
-                .forEach { (mins, color) ->
-                    if (mins == 0) return@forEach
-                    val h = plotHeight * mins / axisMax
-                    drawRect(color, topLeft = Offset(left, yBottom - h), size = Size(barWidth, h))
-                    yBottom -= h
-                }
+            parts.forEach { (mins, color) ->
+                if (mins == 0) return@forEach
+                val h = plotHeight * mins / axisMax
+                drawRect(color, topLeft = Offset(left, yBottom - h), size = Size(barWidth, h))
+                yBottom -= h
+            }
         }
     }
 }
 
 /**
- * Average feed length per day as a single-series smooth trend. A day with no completed feeds
- * has no point and breaks the curve, so each smooth run only ever joins real data.
+ * A per-day mean as a single-series smooth trend. A day with no completed event has no point and
+ * breaks the curve, so each smooth run only ever joins real data.
+ *
+ * Used for both the average feed length and the average nap length; they differ only in the
+ * series and the colour.
  */
 @Composable
-private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifier = Modifier) {
+private fun TrendChart(
+    days: List<LocalDate>,
+    values: List<Int?>,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall
         .copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-    val lineColor = MaterialTheme.colorScheme.primary
+    val lineColor = color
 
     Canvas(modifier) {
         val leftPad = 34.dp.toPx()
@@ -281,9 +465,9 @@ private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifi
         val topPad = 6.dp.toPx()
         val plotWidth = size.width - leftPad
         val plotHeight = size.height - bottomPad - topPad
-        val columnWidth = plotWidth / data.days.size
+        val columnWidth = plotWidth / days.size
 
-        val maxAvg = data.avgMinutesPerDay.filterNotNull().maxOrNull() ?: 0
+        val maxAvg = values.filterNotNull().maxOrNull() ?: 0
         val step = fineGridStep(maxAvg)
         val axisMax = (maxAvg / step + 1) * step
 
@@ -300,11 +484,11 @@ private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifi
             value += step
         }
 
-        drawDayLabels(data.days, textMeasurer, labelStyle, leftPad, columnWidth)
+        drawDayLabels(days, textMeasurer, labelStyle, leftPad, columnWidth)
 
         // Each day's average as a point; contiguous days form one smooth run, and a null day
-        // (no completed feed) starts a new run so the curve never bridges missing data.
-        val points = data.avgMinutesPerDay.mapIndexed { index, avg ->
+        // (no completed event) starts a new run so the curve never bridges missing data.
+        val points = values.mapIndexed { index, avg ->
             avg?.let {
                 Offset(
                     leftPad + columnWidth * (index + 0.5f),
@@ -324,8 +508,8 @@ private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifi
         if (current.isNotEmpty()) runs.add(current)
 
         // Faint dashed least-squares trend across every day that has an average, so the overall
-        // two-week direction reads at a glance beneath the day-to-day curve.
-        drawTrendLine(data.avgMinutesPerDay, axisMax, leftPad, columnWidth, topPad, plotHeight, lineColor)
+        // direction over the window reads at a glance beneath the day-to-day curve.
+        drawTrendLine(values, axisMax, leftPad, columnWidth, topPad, plotHeight, lineColor)
 
         val dotRadius = 3.dp.toPx()
         runs.forEach { run ->
@@ -335,9 +519,9 @@ private fun AvgFeedLengthChart(data: ChartsViewModel.ChartData, modifier: Modifi
     }
 }
 
-/** Straight least-squares fit over the non-null [avgMinutesPerDay], drawn as a faint dashed line. */
+/** Straight least-squares fit over the non-null [values], drawn as a faint dashed line. */
 private fun DrawScope.drawTrendLine(
-    avgMinutesPerDay: List<Int?>,
+    values: List<Int?>,
     axisMax: Int,
     leftPad: Float,
     columnWidth: Float,
@@ -345,7 +529,7 @@ private fun DrawScope.drawTrendLine(
     plotHeight: Float,
     color: Color,
 ) {
-    val points = avgMinutesPerDay.mapIndexedNotNull { index, avg -> avg?.let { index to it } }
+    val points = values.mapIndexedNotNull { index, avg -> avg?.let { index to it } }
     if (points.size < 2) return
 
     val meanX = points.sumOf { it.first }.toFloat() / points.size
@@ -394,7 +578,7 @@ private fun DrawScope.drawSmoothLine(pts: List<Offset>, color: Color, strokeWidt
     drawPath(path, color, style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
-/** Day-of-month labels on alternating columns, aligned so today is always labelled. */
+/** Day-of-month labels, thinned to fit the column width, with today always labelled. */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDayLabels(
     days: List<LocalDate>,
     textMeasurer: androidx.compose.ui.text.TextMeasurer,
@@ -402,8 +586,17 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDayLabels(
     leftPad: Float,
     columnWidth: Float,
 ) {
-    days.forEachIndexed { index, day ->
-        val label = textMeasurer.measure(AnnotatedString(day.dayOfMonth.toString()), labelStyle)
+    val labels = days.map { textMeasurer.measure(AnnotatedString(it.dayOfMonth.toString()), labelStyle) }
+    val widest = labels.maxOfOrNull { it.size.width } ?: return
+
+    // The stride comes from the measured label, not from a fixed count. Labelling every column
+    // fits at 14 days and collides at 30, where a column is 11dp against a two-digit label.
+    val stride = maxOf(1, ceil(widest * 1.5f / columnWidth).toInt())
+
+    // Counted back from the end, so today always carries a label whatever the stride is.
+    days.indices.forEach { index ->
+        if ((days.lastIndex - index) % stride != 0) return@forEach
+        val label = labels[index]
         drawText(
             label,
             topLeft = Offset(
@@ -428,4 +621,5 @@ private fun minutesLabel(minutes: Int): String = when {
     else -> "${minutes / 60}h${minutes % 60}"
 }
 
-private const val MINUTES_PER_DAY = 24 * 60f
+/** The shared day length as a float, for the plot arithmetic. */
+private val MinutesPerDay = MINUTES_PER_DAY.toFloat()

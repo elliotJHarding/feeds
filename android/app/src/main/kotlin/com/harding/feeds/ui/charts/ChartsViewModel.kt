@@ -2,121 +2,80 @@ package com.harding.feeds.ui.charts
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.harding.feeds.client.models.FeedType
-import com.harding.feeds.client.models.Side
-import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.di.AppContainer
-import java.time.Duration
+import com.harding.feeds.ui.components.EventFilter
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 
 /**
- * Chart data for the last [WINDOW_DAYS] days, derived once per Room emission. A feed is
- * rendered as day-clamped segments (a midnight-crossing feed appears on both days), and the
- * same segments feed the per-day minute totals so the two charts always agree. An
- * in-progress feed counts up to "now at load".
+ * Chart state: the window, the filter, and the series for both.
+ *
+ * The series themselves are pure functions in ChartSeries.kt, where the tests can reach them.
+ * This class only holds the two choices and wires Room to them.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ChartsViewModel(container: AppContainer) : ViewModel() {
 
-    /** A feed's span within one day column, in minutes since that day's midnight. */
-    data class Segment(
-        val dayIndex: Int,
-        val startMinute: Int,
-        val endMinute: Int,
-        val side: Side?,
-        val isBottle: Boolean = false,
-    )
-
-    /** A day's feeding minutes split by side, for the stacked duration bar. */
-    data class DayMinutes(val left: Int, val right: Int, val unknown: Int) {
-        val total: Int get() = left + right + unknown
+    /**
+     * How far back the charts look.
+     *
+     * 30 days is the top of the range, and the limit is measured rather than chosen. The
+     * time-of-day chart gives one column per day out of about 337dp of plot on a 411dp screen,
+     * so 30 days leaves 11dp a column against a 5dp mark. At 60 days a column is 5.6dp and the
+     * marks touch; at 90 they overlap. A longer window needs that chart to scroll sideways,
+     * which is a separate piece of work.
+     */
+    enum class Window(val days: Long, val label: String) {
+        WEEK(7, "7d"),
+        FORTNIGHT(14, "14d"),
+        MONTH(30, "30d"),
     }
 
-    data class ChartData(
-        val days: List<LocalDate>,
-        val segments: List<Segment>,
-        val minutesPerDay: List<DayMinutes>,
-        /** Mean length of completed feeds started on each day; null where a day has no feeds. */
-        val avgMinutesPerDay: List<Int?>,
-    )
+    private val zone: ZoneId = ZoneId.systemDefault()
 
-    private val zone = ZoneId.systemDefault()
+    private val windowState = MutableStateFlow(Window.FORTNIGHT)
+    val window: StateFlow<Window> = windowState.asStateFlow()
 
-    private val days: List<LocalDate> = LocalDate.now(zone).let { today ->
-        (WINDOW_DAYS - 1 downTo 0L).map(today::minusDays)
+    private val filterState = MutableStateFlow(EventFilter.BOTH)
+    val filter: StateFlow<EventFilter> = filterState.asStateFlow()
+
+    fun selectWindow(next: Window) {
+        windowState.value = next
     }
 
-    val data: StateFlow<ChartData> = container.feedRepository
-        .feedsBetween(
-            from = days.first().atStartOfDay(zone).toInstant(),
-            to = days.last().plusDays(1).atStartOfDay(zone).toInstant(),
-        )
-        .map { feeds -> buildChartData(feeds) }
+    fun selectFilter(next: EventFilter) {
+        filterState.value = next
+    }
+
+    val data: StateFlow<ChartData> = windowState
+        .flatMapLatest { window ->
+            val days = daysFor(window)
+            // One day of slack on the leading edge. Both range queries filter on startTime
+            // alone, so a nap that began the night before the window would otherwise vanish
+            // from the first column - and a nap is hours long, so the hole would show.
+            val from = days.first().minusDays(1).atStartOfDay(zone).toInstant()
+            val to = days.last().plusDays(1).atStartOfDay(zone).toInstant()
+
+            combine(
+                container.feedRepository.feedsBetween(from, to),
+                container.napRepository.napsBetween(from, to),
+            ) { feeds, naps -> buildChartData(days, feeds, naps, Instant.now(), zone) }
+        }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            ChartData(days, emptyList(), List(days.size) { DayMinutes(0, 0, 0) }, List(days.size) { null }),
+            emptyChartData(daysFor(Window.FORTNIGHT)),
         )
 
-    private fun buildChartData(feeds: List<FeedEntity>): ChartData {
-        val indexByDay = days.withIndex().associate { (i, d) -> d to i }
-        val now = Instant.now()
-
-        val segments = feeds.flatMap { feed ->
-            val end = maxOf(feed.endTime ?: now, feed.startTime)
-            generateSequence(feed.startTime.atZone(zone).toLocalDate()) { it.plusDays(1) }
-                .takeWhile { !it.isAfter(end.atZone(zone).toLocalDate()) }
-                .mapNotNull { day ->
-                    val dayIndex = indexByDay[day] ?: return@mapNotNull null
-                    val dayStart = day.atStartOfDay(zone).toInstant()
-                    val dayEnd = day.plusDays(1).atStartOfDay(zone).toInstant()
-                    val startMinute = Duration.between(dayStart, maxOf(feed.startTime, dayStart))
-                        .toMinutes().toInt().coerceIn(0, MINUTES_PER_DAY)
-                    val endMinute = Duration.between(dayStart, minOf(end, dayEnd))
-                        .toMinutes().toInt().coerceIn(startMinute, MINUTES_PER_DAY)
-                    Segment(dayIndex, startMinute, endMinute, feed.side, feed.type == FeedType.bOTTLE)
-                }
-                .toList()
-        }
-
-        // Both duration series are breast-only: a bottle is a zero-duration point event, so
-        // it has no minutes to stack and would only drag the per-day average toward zero.
-        val left = IntArray(days.size); val right = IntArray(days.size); val unknown = IntArray(days.size)
-        segments.filterNot { it.isBottle }.forEach { s ->
-            val mins = s.endMinute - s.startMinute
-            when (s.side) {
-                Side.l -> left[s.dayIndex] += mins
-                Side.r -> right[s.dayIndex] += mins
-                null -> unknown[s.dayIndex] += mins
-            }
-        }
-        val minutesPerDay = days.indices.map { DayMinutes(left[it], right[it], unknown[it]) }
-
-        // Average feed length groups whole feeds by their start day (not the day-split segments
-        // above) and counts only completed feeds, so an in-progress feed doesn't drag the mean.
-        val totalByDay = IntArray(days.size)
-        val countByDay = IntArray(days.size)
-        feeds.forEach { feed ->
-            if (feed.type == FeedType.bOTTLE) return@forEach
-            val end = feed.endTime ?: return@forEach
-            val dayIndex = indexByDay[feed.startTime.atZone(zone).toLocalDate()] ?: return@forEach
-            totalByDay[dayIndex] +=
-                Duration.between(feed.startTime, end).coerceAtLeast(Duration.ZERO).toMinutes().toInt()
-            countByDay[dayIndex]++
-        }
-        val avgMinutesPerDay =
-            days.indices.map { if (countByDay[it] == 0) null else totalByDay[it] / countByDay[it] }
-
-        return ChartData(days, segments, minutesPerDay, avgMinutesPerDay)
-    }
-
-    private companion object {
-        const val WINDOW_DAYS = 14L
-        const val MINUTES_PER_DAY = 24 * 60
-    }
+    private fun daysFor(window: Window): List<LocalDate> =
+        LocalDate.now(zone).let { today -> (window.days - 1 downTo 0L).map(today::minusDays) }
 }
