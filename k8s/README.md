@@ -111,9 +111,24 @@ rm -f /tmp/tls.crt /tmp/tls.key
 # verify (no -k): curl -sS https://grubplanner.co.uk:32000/v2/ -> HTTP 200
 ```
 
+**The quick fix buys less than 90 days, and the amount varies.** The copy inherits the source
+cert's expiry rather than starting a fresh 90 days. Applied on 12 Sep 2026, the copied cert ran
+to 19 Oct 2026 only - 37 days - because `default/tls-cert` was itself seven weeks old. Check the
+`notAfter` you are copying before you assume when the next lapse is due:
+
+```bash
+kubectl get secret tls-cert -n default -o jsonpath='{.data.tls\.crt}' | base64 -d \
+  | openssl x509 -noout -dates
+```
+
+Known lapses: expired 20 Aug 2026, found 12 Sep 2026 when a release push failed. It had been
+broken for 23 days, and it stops meals deploying as well as feeds. Nothing alerts on it - the
+only sign is a red GitHub Actions run, and only when somebody tries to deploy.
+
 Permanent fix (not yet done): have cert-manager manage `registry-certs` (an `Issuer` in the
 `container-registry` namespace + a `Certificate`, or a cert reflector mirroring `default/tls-cert`)
-so it auto-renews and this stops recurring.
+so it auto-renews and this stops recurring. Worth doing: the quick fix is now known to buy as
+little as five weeks.
 
 ## Deviations from the meals manifests
 
