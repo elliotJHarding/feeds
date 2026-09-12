@@ -115,6 +115,33 @@ Foreground polling: refetch on app open/resume plus a ~15 second poll while the 
   the sheet is expanded. The day header drops terms it can no longer count under a filter.
 - Charts, v1: **interval pattern** (gap between feeds / time-of-day view) and **duration trend** (feed minutes per day). Feeds-per-day count and L/R balance are deferred.
 
+#### Charts, agreed direction (not built)
+
+Two changes come before any new chart. Both exist to stop the time-of-day chart becoming
+unreadable once naps are on it.
+
+- **The window becomes configurable.** It is fixed at 14 days (`ChartsViewModel.WINDOW_DAYS`).
+  There are 69 days of real data, so the charts show under a quarter of it, which is too short to
+  see any trend.
+- **The Feeds / Both / Naps filter is reused on the charts screen.** `HistoryFilter` is a bare
+  enum with no dependencies, and `HistoryFilterPill` already takes only `selected`, `onSelect` and
+  `modifier`. It is private to `HomeScreen.kt`, so reuse means moving one composable to
+  `ui/components/`. Nothing else has to change.
+
+Only then is naps-on-the-time-of-day-chart worth building, and it needs weeks of nap data first.
+There was exactly **one** nap row on 12 Sep 2026, the day naps shipped.
+
+**Measured against 1,102 real feeds over 69 days**, to decide what a chart would actually say:
+
+- The night is where the signal is. The mean gap between night feeds roughly doubled over ten
+  weeks, 72 to 111 minutes, and night feeds fell from 55 a week to 33. Nothing in the app shows
+  this.
+- Chart the **mean** night gap, not the longest stretch. The weekly maximum reads 386, 279, 266,
+  429 - noise that would suggest reversals that did not happen. The mean does not.
+- Feeds per day peaked at 19.3 in late July and now sits at 13.5. Real, and currently invisible.
+- **L/R balance stays out of scope, and the data is the reason.** Weekly counts run 50/54, 58/57,
+  65/64, 51/51, 43/44. The chart would report "even" forever.
+
 ## Server
 
 Mirror of the meals server: **Spring Boot 3.4, Java 21, Gradle, JPA/Hibernate**, REST/JSON under `/api`. Schema managed by `ddl-auto=update` (entities are the source of truth, as in meals — no Flyway at this scale).
