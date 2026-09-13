@@ -132,6 +132,30 @@ The scale is **0.5dp per minute**, so a day is 720dp. The expanded list viewport
 on a Pixel 10, and one screen therefore holds one day. Two finer scales were measured too: 0.75dp
 per minute shows about 16 hours, and 1.0dp shows about 12.
 
+**Two lanes: feeds against the hour rail, sleep beside them.** The layout follows from what the
+screen is asked for, in this order:
+
+1. The shape of the day at a glance — a picture, one-handed, no numbers.
+2. Two numbers that decide the next hour: how long she has been awake, and how long since the
+   last feed.
+3. Finding a record to correct, which the compact list does better anyway.
+
+A single column served none of them, and the first build proved it on real data: nap bands ran the
+full plot width, so **six of the nine interval values on screen were drawn underneath one**; the two
+measures sat on two rails at the same height with nothing tying either to its event; and a feed and
+a nap minutes apart collapsed into one clump. Lanes fix all three by construction. A band cannot
+cover a feed's interval because it is not in that column, and each interval prints in the lane of
+the thing it measures, so no second rail is needed. The lanes also show the cycle the records
+actually follow — 13 Sep ran 15:23–15:34 fed, then 15:34–16:35 slept.
+
+The split is computed from the panel's width, not hard-coded, and under a Feeds or Naps filter the
+visible lane takes the whole plot: half an empty screen is not a reading, and the filter has
+already said which kind is wanted. The lanes carry no headings — the block shapes and the filter's
+own vocabulary identify them, and a heading would repeat on all 30 day panels.
+
+**The clock time is the quietest text on the screen**, below the blocks in weight. The blocks carry
+the reading the mode exists for; a time is what you drop to when a block is not enough.
+
 **The block is the session, not the feed.** Over 21 days of real records, two consecutive feeds
 came as close as 0.7 minutes apart, and 29 of 281 pairs fell under 15 minutes. At this scale those
 blocks would overlap. Two consecutive sessions were never closer than 26 minutes, because the
@@ -163,10 +187,10 @@ different measures, so one merged number would be false:
   the compact list's spine between cards. Both modes read one shared `gapsBeforeFeed`, so they
   cannot print different numbers for the same pair.
 - **The awake stretch** is nap end to next nap start. End-to-start, because a nap band already
-  draws its own length and a start-to-start measure would only restate it. It draws against the
-  plot's right edge in the nap accent, and says "awake", so the two can never be read as one
-  number. A running nap has not finished, so the stretch after it is unknown and nothing is
-  printed — its start cannot stand in, as that would count the nap as awake time.
+  draws its own length and a start-to-start measure would only restate it. It draws in the sleep
+  lane in the nap accent, and says "awake". A running nap has not finished, so the stretch after it
+  is unknown and nothing is printed — its start cannot stand in, as that would count the nap as
+  awake time.
 
 A mark appears only where there is at least 30dp — an hour — of clear space: a short interval does
 not read as empty, and the value would crowd the clock labels. Measured session intervals run 66
