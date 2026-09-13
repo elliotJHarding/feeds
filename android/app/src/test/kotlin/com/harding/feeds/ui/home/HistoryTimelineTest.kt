@@ -191,6 +191,58 @@ class HistoryTimelineTest {
         assertEquals(null, gapsBeforeFeed(days)[newer.id])
     }
 
+    // Awake stretches. A different measure from the feed interval, deliberately.
+
+    @Test
+    fun `the awake stretch before a nap is measured end to start`() {
+        val earlier = nap(at(8, 20), at(9, 45))
+        val later = nap(at(12, 40), at(14, 30))
+
+        val days = buildDayHistory(feeds = emptyList(), naps = listOf(later, earlier), zone = zone)
+
+        // 09:45 to 12:40, not the 4h 20m a start-to-start measure would give.
+        assertEquals(Duration.ofMinutes(175), awakeBeforeNap(days)[later.id])
+    }
+
+    /**
+     * A running nap has not finished, so the stretch after it is unknown. Its start cannot stand
+     * in the way it does for a session pause - that would count the nap itself as awake time.
+     */
+    @Test
+    fun `a running previous nap yields no awake stretch`() {
+        val running = nap(at(8, 20), end = null)
+        val later = nap(at(12, 40), at(14, 30))
+
+        val days = buildDayHistory(feeds = emptyList(), naps = listOf(later, running), zone = zone)
+
+        assertEquals(null, awakeBeforeNap(days)[later.id])
+    }
+
+    @Test
+    fun `hand-edited naps that overlap yield no awake stretch`() {
+        val earlier = nap(at(8), at(13))
+        val later = nap(at(12), at(14))
+
+        val days = buildDayHistory(feeds = emptyList(), naps = listOf(later, earlier), zone = zone)
+
+        assertEquals(null, awakeBeforeNap(days)[later.id])
+    }
+
+    @Test
+    fun `the awake stretch crosses the day boundary`() {
+        val lastNight = LocalDate.of(2026, 7, 22).atTime(20, 0).atZone(zone).toInstant()
+        val morning = nap(at(2), at(4))
+
+        val days = buildDayHistory(
+            feeds = emptyList(),
+            naps = listOf(morning, nap(lastNight, lastNight.plusSeconds(3600))),
+            zone = zone,
+        )
+
+        // 21:00 to 02:00.
+        assertEquals(Duration.ofHours(5), awakeBeforeNap(days)[morning.id])
+    }
+
     // The filter
 
     @Test

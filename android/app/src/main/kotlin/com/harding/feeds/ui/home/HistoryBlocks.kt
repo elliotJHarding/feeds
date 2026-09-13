@@ -103,8 +103,10 @@ fun HistoryBlocks(
 
     val today = LocalDate.now(zone)
     val now = remember(nowEpochMinute) { Instant.ofEpochSecond(nowEpochMinute * 60) }
-    // Shared with the compact list, so the two modes cannot print different numbers for one pair.
-    val gapsBefore = remember(days) { gapsBeforeFeed(days) }
+    // Computed across all days, not per panel, so the stretch that crosses midnight still counts.
+    // The feed measure is shared with the compact list, so the two modes cannot print different
+    // numbers for one pair.
+    val intervals = remember(days) { Intervals(gapsBeforeFeed(days), awakeBeforeNap(days)) }
 
     // reverseLayout stacks item 0 at the bottom and opens there. `days` is newest-first, so the
     // newest day lands at the bottom under the thumb and older days run upward, while each day
@@ -116,7 +118,7 @@ fun HistoryBlocks(
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
-                DayPanel(day, today, filter, zone, now, gapsBefore, onSessionTap, onNapTap)
+                DayPanel(day, today, filter, zone, now, intervals, onSessionTap, onNapTap)
             }
         }
     }
@@ -130,27 +132,35 @@ private fun DayPanel(
     filter: EventFilter,
     zone: ZoneId,
     now: Instant,
-    gapsBefore: Map<String, Duration>,
+    intervals: Intervals,
     onSessionTap: (FeedSession) -> Unit,
     onNapTap: (NapEntity) -> Unit,
 ) {
-    val layout = remember(day, now, gapsBefore) { layOut(day, zone, now, gapsBefore) }
+    val layout = remember(day, now, intervals) { layOut(day, zone, now, intervals) }
 
     Column {
         DayHeader(day, today)
         Box(Modifier.fillMaxWidth().height(DayHeight)) {
             HourGrid()
 
-            // Four passes, so the z-order is fixed rather than incidental: nap bands are ground,
-            // the interval marks sit in the space between blocks, session blocks sit on the
-            // bands, and every label reads over all of it.
+            // The z-order is fixed rather than incidental: nap bands are ground, the interval
+            // marks sit in the space between blocks, session blocks sit on the bands, and every
+            // label reads over all of it. The two measures take separate rails, so a stretch that
+            // is both an interval and an awake window shows both without a collision.
             layout.napBars.forEach { NapBand(it, filter) }
+            layout.napGaps.forEach { AwakeMark(it) }
             if (filter != EventFilter.NAPS) layout.feedGaps.forEach { FeedGapMark(it) }
             layout.sessionBars.forEach { SessionBlock(it) }
             layout.items.forEach { BlockLabel(it, onSessionTap, onNapTap) }
         }
     }
 }
+
+/** The two derived intervals. Different measures, so they are never merged into one number. */
+private data class Intervals(
+    val beforeFeed: Map<String, Duration>,
+    val awakeBeforeNap: Map<String, Duration>,
+)
 
 /** One drawn rectangle and the record behind it. */
 private data class Bar<T>(val record: T, val top: Dp, val height: Dp)
@@ -173,6 +183,7 @@ private data class DayLayout(
     val sessionBars: List<Bar<FeedSession>>,
     val napBars: List<Bar<NapEntity>>,
     val feedGaps: List<GapMark>,
+    val napGaps: List<GapMark>,
     val items: List<PlacedItem>,
 )
 
@@ -187,7 +198,7 @@ private fun layOut(
     day: DayHistory,
     zone: ZoneId,
     now: Instant,
-    gapsBefore: Map<String, Duration>,
+    intervals: Intervals,
 ): DayLayout {
     val ordered = day.items.asReversed()
     val spans = ordered.map { it.spanIn(day.date, zone, now) }
@@ -218,31 +229,41 @@ private fun layOut(
     val sessionBars = lane(ordered.filterIsInstance<TimelineItem.Feeding>().map { it.session }) {
         blockSpan(it.startInstant(), it.endInstant(), day.date, zone, now)
     }
+    val napBars = lane(ordered.filterIsInstance<TimelineItem.Napping>().map { it.nap }) {
+        blockSpan(it.startTime, it.endTime, day.date, zone, now)
+    }
 
     return DayLayout(
         sessionBars = sessionBars,
-        napBars = lane(ordered.filterIsInstance<TimelineItem.Napping>().map { it.nap }) {
-            blockSpan(it.startTime, it.endTime, day.date, zone, now)
+        napBars = napBars,
+        // Keyed on the session's oldest feed, the same lookup the compact list uses.
+        feedGaps = gapMarks(sessionBars, spine = true, { intervals.beforeFeed[it.feeds.last().id] }) {
+            formatHoursMinutes(it)
         },
-        feedGaps = feedGaps(sessionBars, gapsBefore),
+        // No spine: the band edges already bound the stretch, and "awake" names the measure, which
+        // is a different one from the feed interval on the other rail.
+        napGaps = gapMarks(napBars, spine = false, { intervals.awakeBeforeNap[it.id] }) {
+            "${formatHoursMinutes(it)} awake"
+        },
         items = items,
     )
 }
 
 /**
- * An interval mark for the space above each session block.
+ * An interval mark for the space above each block in a lane.
  *
  * Only where the space is at least [GapMarkMinSpace]. A short interval does not read as empty, so
  * labelling it would only add clutter - and the label needs the room anyway, or it would collide
  * with the clock labels on the same rail. Measured session intervals run 66 minutes at the lower
  * quartile and 122 at the median, so most intervals clear the bar and the tight ones stay quiet.
  */
-private fun feedGaps(
-    bars: List<Bar<FeedSession>>,
-    gapsBefore: Map<String, Duration>,
+private fun <T> gapMarks(
+    bars: List<Bar<T>>,
+    spine: Boolean,
+    interval: (T) -> Duration?,
+    label: (Duration) -> String,
 ): List<GapMark> = bars.mapIndexedNotNull { index, bar ->
-    // The interval is keyed on the session's oldest feed, the same lookup the compact list uses.
-    val gap = gapsBefore[bar.record.feeds.last().id] ?: return@mapIndexedNotNull null
+    val gap = interval(bar.record) ?: return@mapIndexedNotNull null
     val previous = bars.getOrNull(index - 1)
     val spaceTop = previous?.let { it.top + it.height } ?: 0.dp
     val space = bar.top - spaceTop
@@ -251,8 +272,8 @@ private fun feedGaps(
     GapMark(
         top = spaceTop,
         height = space,
-        text = formatHoursMinutes(gap),
-        connected = previous != null,
+        text = label(gap),
+        connected = spine && previous != null,
     )
 }
 
@@ -355,6 +376,32 @@ private fun FeedGapMark(mark: GapMark) {
             mark.text,
             style = MaterialTheme.typography.labelMedium,
             color = ink.copy(alpha = 0.7f),
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * The awake stretch between two naps, written against the plot's right edge.
+ *
+ * Its own rail, away from the feed intervals, because the two are different measures: this one is
+ * end-to-start, and it names itself so the pair cannot be read as one number. The nap accent ties
+ * it to the lane it belongs to. The compact list right-aligns its interval values the same way.
+ */
+@Composable
+private fun AwakeMark(mark: GapMark) {
+    Box(
+        Modifier
+            .offset(y = mark.top)
+            .padding(end = PlotEndInset)
+            .fillMaxWidth()
+            .height(mark.height),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Text(
+            mark.text,
+            style = MaterialTheme.typography.labelMedium,
+            color = napColor,
             maxLines = 1,
         )
     }

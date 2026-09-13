@@ -155,11 +155,21 @@ as far as the next block allows and always leaves a 2dp gutter. A block is never
 true length, so a long record that a hand-edited time makes overlap still draws whole. Lengths near
 the floor are not comparable, and duration comparison stays the compact list's job.
 
-**Feed intervals are written in the space they measure.** A dotted spine down the block column with
-the value beside it, mirroring the compact list's spine between cards. Both modes read one shared
-`gapsBeforeFeed`, so they cannot print different numbers for the same pair. The mark appears only
-where there is at least 30dp — an hour — of clear space: a short interval does not read as empty,
-and the value would crowd the clock labels on the same rail. Measured session intervals run 66
+**Both intervals are written in the space they measure, and they are kept apart.** They are
+different measures, so one merged number would be false:
+
+- **The feed interval** is session start to session start — how feeding frequency is measured. It
+  draws as a dotted spine down the block column with the value on the clock labels' rail, mirroring
+  the compact list's spine between cards. Both modes read one shared `gapsBeforeFeed`, so they
+  cannot print different numbers for the same pair.
+- **The awake stretch** is nap end to next nap start. End-to-start, because a nap band already
+  draws its own length and a start-to-start measure would only restate it. It draws against the
+  plot's right edge in the nap accent, and says "awake", so the two can never be read as one
+  number. A running nap has not finished, so the stretch after it is unknown and nothing is
+  printed — its start cannot stand in, as that would count the nap as awake time.
+
+A mark appears only where there is at least 30dp — an hour — of clear space: a short interval does
+not read as empty, and the value would crowd the clock labels. Measured session intervals run 66
 minutes at the lower quartile and 122 at the median, so most clear the bar.
 
 The blank is otherwise honest, and the missing ground layer is naps, not the design. Blocks cover

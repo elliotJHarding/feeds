@@ -108,6 +108,26 @@ fun gapsBeforeFeed(days: List<DayHistory>): Map<String, Duration> = buildMap {
 }
 
 /**
+ * The awake stretch before each nap, keyed by nap id: this nap's start minus the previous nap's
+ * end.
+ *
+ * **End-to-start, where the feed interval is start-to-start**, and the difference is the point. A
+ * nap band already draws its own length, so a start-to-start measure would only restate it. What
+ * the blank between two bands is, is the time she was awake.
+ *
+ * A previous nap with no end has not finished, so the stretch is unknown and no entry is made. Its
+ * start cannot stand in the way it does for a session pause: that would count the nap itself as
+ * awake time. A hand-edited overlap gives a negative stretch, which the same one-minute bar drops.
+ */
+fun awakeBeforeNap(days: List<DayHistory>): Map<String, Duration> = buildMap {
+    days.flatMap { it.naps }.zipWithNext { newer, older ->
+        val end = older.endTime ?: return@zipWithNext
+        val awake = Duration.between(end, newer.startTime)
+        if (awake >= Duration.ofMinutes(1)) put(newer.id, awake)
+    }
+}
+
+/**
  * Narrows a day to one filter, or drops it entirely when nothing matches - otherwise the list
  * fills with bare day headers over nothing.
  *
