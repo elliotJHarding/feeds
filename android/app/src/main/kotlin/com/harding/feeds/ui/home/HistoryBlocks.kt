@@ -80,8 +80,16 @@ import java.time.ZoneId
  * 199 of them spanned under the block floor, so a stripe cannot be a duration - it says which
  * sides, in which order.
  *
- * **Later runs downward, and the newest day is at the bottom**, matching the app's time-of-day
- * chart. `reverseLayout` gives that ordering while still opening on the newest records.
+ * **Newest first, everywhere.** The day list runs newest at the top and time runs *upward* inside
+ * each panel, so midnight is at its bottom edge. Scrolling down always goes back in time, in this
+ * mode and in [HistoryList] alike.
+ *
+ * The first build ran the other way, following the time-of-day chart's midnight-at-top axis, and
+ * two things were wrong with it. It reversed the compact list, so switching modes reversed the
+ * reading. And it made the sheet hard to close: `reverseLayout` means a downward drag always has
+ * older content to scroll into, so the drag that should collapse the sheet never reaches it.
+ *
+ * Today's panel stops at the current hour rather than at 23:59 - see [panelMinutes].
  *
  * Like [HistoryList] this does NOT take the ticking clock. It takes [nowEpochMinute], a minute
  * counter, so a running record's block grows once a minute instead of recomposing every block on
@@ -118,12 +126,11 @@ fun HistoryBlocks(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val lanes = laneGeometry(maxWidth, filter)
 
-        // reverseLayout stacks item 0 at the bottom and opens there. `days` is newest-first, so the
-        // newest day lands at the bottom under the thumb and older days run upward, while each day
-        // panel still draws midnight at its own top.
+        // `days` is newest-first and the list is not reversed, so the newest day is at the top
+        // and the sheet opens on it. A downward drag there has nothing left to scroll, so it
+        // reaches the sheet and closes it.
         LazyColumn(
             Modifier.fillMaxSize(),
-            reverseLayout = true,
             contentPadding = PaddingValues(bottom = FloatingFilterClearance),
         ) {
             days.forEach { day ->
@@ -147,20 +154,22 @@ private fun DayPanel(
     onSessionTap: (FeedSession) -> Unit,
     onNapTap: (NapEntity) -> Unit,
 ) {
-    val layout = remember(day, now, intervals, lanes) { layOut(day, zone, now, intervals) }
+    val minutes = remember(day.date, now) { panelMinutes(day.date, now, zone) }
+    val panel = (minutes * DpPerMinute).dp
+    val layout = remember(day, now, intervals, minutes) { layOut(day, zone, now, intervals, minutes) }
 
     Column {
         DayHeader(day, today)
-        Box(Modifier.fillMaxWidth().height(DayHeight)) {
-            HourGrid(lanes)
+        Box(Modifier.fillMaxWidth().height(panel)) {
+            HourGrid(lanes, minutes, panel)
 
             // Sleep lane first: a band is ground, and its label reads over it.
-            layout.napGaps.forEach { AwakeMark(it, lanes) }
-            layout.napLane.forEach { NapBand(it, lanes, onNapTap) }
+            layout.napGaps.forEach { AwakeMark(it, lanes, panel) }
+            layout.napLane.forEach { NapBand(it, lanes, panel, onNapTap) }
 
             // Feed lane. Nothing here can touch the sleep lane, so the order between them is free.
-            layout.feedGaps.forEach { FeedGapMark(it, lanes) }
-            layout.feedLane.forEach { SessionBlock(it, lanes, onSessionTap) }
+            layout.feedGaps.forEach { FeedGapMark(it, lanes, panel) }
+            layout.feedLane.forEach { SessionBlock(it, lanes, panel, onSessionTap) }
         }
     }
 }
@@ -239,17 +248,22 @@ private fun layOut(
     zone: ZoneId,
     now: Instant,
     intervals: Intervals,
+    panelMinutes: Int,
 ): DayLayout {
-    // Oldest first, so the label nudge only ever pushes downward - a nudge that pushed upward
-    // could walk a label off the top of the panel.
+    // Oldest first: every lane's maths runs in minutes from midnight, whichever way the panel
+    // later draws them. The label nudge therefore pushes a clash later in time, which is upward
+    // on screen, and [place] clamps it so it cannot leave the panel.
     val ordered = day.items.asReversed()
 
-    val feedLane = place(ordered.filterIsInstance<TimelineItem.Feeding>().map { it.session }) {
-        blockSpan(it.startInstant(), it.endInstant(), day.date, zone, now)
-    }
-    val napLane = place(ordered.filterIsInstance<TimelineItem.Napping>().map { it.nap }) {
-        blockSpan(it.startTime, it.endTime, day.date, zone, now)
-    }
+    val feedLane = place(
+        ordered.filterIsInstance<TimelineItem.Feeding>().map { it.session },
+        panelMinutes,
+    ) { blockSpan(it.startInstant(), it.endInstant(), day.date, zone, now) }
+
+    val napLane = place(
+        ordered.filterIsInstance<TimelineItem.Napping>().map { it.nap },
+        panelMinutes,
+    ) { blockSpan(it.startTime, it.endTime, day.date, zone, now) }
 
     return DayLayout(
         feedLane = feedLane,
@@ -273,7 +287,12 @@ private fun layOut(
  * Lays out one lane: block tops from the record's own minutes, heights from [blockHeights], and
  * labels centred on their block then pushed apart so no two overlap.
  */
-private fun <T> place(records: List<T>, span: (T) -> BlockSpan): List<Placed<T>> {
+private fun <T> place(
+    records: List<T>,
+    panelMinutes: Int,
+    span: (T) -> BlockSpan,
+): List<Placed<T>> {
+    val panelHeight = panelMinutes * DpPerMinute
     val spans = records.map(span)
     val tops = spans.map { it.startMinute * DpPerMinute }
     val heights = blockHeights(
@@ -293,7 +312,9 @@ private fun <T> place(records: List<T>, span: (T) -> BlockSpan): List<Placed<T>>
             record = record,
             top = tops[index].dp,
             height = heights[index].dp,
-            labelTop = labelTops[index].coerceAtLeast(0f).dp,
+            // Clamped into the panel: a run of clashes pushes the last label later in time, and
+            // a record near the end of a day could otherwise be nudged past the panel's edge.
+            labelTop = labelTops[index].coerceIn(0f, panelHeight - LabelSeparation).dp,
         )
     }
 }
@@ -331,7 +352,7 @@ private fun <T> gapMarks(
  * Canvas so 25 rules and 12 labels cost one draw rather than 37 layout nodes per day.
  */
 @Composable
-private fun HourGrid(lanes: LaneGeometry) {
+private fun HourGrid(lanes: LaneGeometry, minutes: Int, panel: Dp) {
     val measurer = rememberTextMeasurer()
     val minor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f)
     val major = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f)
@@ -342,9 +363,11 @@ private fun HourGrid(lanes: LaneGeometry) {
         val railPx = lanes.railWidth.toPx()
         val endPx = lanes.plotEnd.toPx()
         val hourPx = (60 * DpPerMinute).dp.toPx()
+        val lastHour = minutes / 60
 
-        for (hour in 0..24) {
-            val y = hour * hourPx
+        for (hour in 0..lastHour) {
+            // Time runs upward, so midnight is the bottom edge.
+            val y = size.height - hour * hourPx
             val isMajor = hour % 6 == 0
             drawLine(
                 color = if (isMajor) major else minor,
@@ -352,7 +375,7 @@ private fun HourGrid(lanes: LaneGeometry) {
                 end = Offset(endPx, y),
                 strokeWidth = if (isMajor) 2f else 1f,
             )
-            if (hour % 2 != 0 || hour == 24) continue
+            if (hour % 2 != 0) continue
 
             val text = measurer.measure(AnnotatedString("%02d".format(hour)), labelStyle)
             drawText(
@@ -373,10 +396,15 @@ private fun HourGrid(lanes: LaneGeometry) {
  * the charts already use. The lane, not the colour, is what says this is sleep.
  */
 @Composable
-private fun NapBand(placed: Placed<NapEntity>, lanes: LaneGeometry, onTap: (NapEntity) -> Unit) {
+private fun NapBand(
+    placed: Placed<NapEntity>,
+    lanes: LaneGeometry,
+    panel: Dp,
+    onTap: (NapEntity) -> Unit,
+) {
     Box(
         Modifier
-            .offset(x = lanes.bandStart, y = placed.top)
+            .offset(x = lanes.bandStart, y = flip(panel, placed.top, placed.height))
             .width(lanes.bandWidth)
             .height(placed.height)
             .clip(RoundedCornerShape(9.dp))
@@ -393,6 +421,7 @@ private fun NapBand(placed: Placed<NapEntity>, lanes: LaneGeometry, onTap: (NapE
         tail = end?.let { formatHoursMinutes(gapBetween(nap.startTime, it)) } ?: "napping",
         blockTop = placed.top,
         blockHeight = placed.height,
+        panel = panel,
         onTap = { onTap(nap) },
     )
 }
@@ -406,17 +435,19 @@ private fun NapBand(placed: Placed<NapEntity>, lanes: LaneGeometry, onTap: (NapE
 private fun SessionBlock(
     placed: Placed<FeedSession>,
     lanes: LaneGeometry,
+    panel: Dp,
     onTap: (FeedSession) -> Unit,
 ) {
     val session = placed.record
     Column(
         Modifier
-            .offset(x = lanes.blockStart, y = placed.top)
+            .offset(x = lanes.blockStart, y = flip(panel, placed.top, placed.height))
             .width(lanes.blockWidth)
             .height(placed.height)
             .clip(RoundedCornerShape(5.dp)),
     ) {
-        session.feeds.asReversed().forEach { feed ->
+        // Time runs upward inside the block too, so the newest feed takes the top stripe.
+        session.feeds.forEach { feed ->
             Box(Modifier.weight(1f).fillMaxWidth().background(feed.blockColor()))
         }
     }
@@ -429,6 +460,7 @@ private fun SessionBlock(
         tail = sessionTail(session),
         blockTop = placed.top,
         blockHeight = placed.height,
+        panel = panel,
         onTap = { onTap(session) },
     )
 }
@@ -452,20 +484,24 @@ private fun LaneLabel(
     tail: String,
     blockTop: Dp,
     blockHeight: Dp,
+    panel: Dp,
     onTap: () -> Unit,
 ) {
-    val tapTop = minOf(blockTop, top)
-    val tapBottom = maxOf(blockTop + blockHeight, top + LabelSeparation.dp)
+    // Worked out in time-space, then flipped once, so the box and the label inside it stay
+    // together whichever way the axis runs.
+    val boxTop = minOf(blockTop, top)
+    val boxBottom = maxOf(blockTop + blockHeight, top + LabelSeparation.dp)
+    val boxHeight = maxOf(boxBottom - boxTop, MinTapHeight)
 
     Box(
         Modifier
-            .offset(x = start, y = tapTop)
+            .offset(x = start, y = flip(panel, boxTop, boxHeight))
             .width(width)
-            .height(maxOf(tapBottom - tapTop, MinTapHeight))
+            .height(boxHeight)
             .clickable(onClick = onTap),
     ) {
         Row(
-            Modifier.offset(y = top - tapTop),
+            Modifier.offset(y = flip(boxHeight, top - boxTop, LabelSeparation.dp)),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
@@ -487,11 +523,12 @@ private fun LaneLabel(
 
 /** The feed interval, on a dotted spine down the block column - the compact list's language. */
 @Composable
-private fun FeedGapMark(mark: GapMark, lanes: LaneGeometry) {
+private fun FeedGapMark(mark: GapMark, lanes: LaneGeometry, panel: Dp) {
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
 
     if (mark.connected) {
-        Box(Modifier.offset(x = lanes.blockStart, y = mark.top).height(mark.height)) {
+        val y = flip(panel, mark.top, mark.height)
+        Box(Modifier.offset(x = lanes.blockStart, y = y).height(mark.height)) {
             Canvas(Modifier.width(lanes.blockWidth).fillMaxSize()) {
                 drawLine(
                     color = ink.copy(alpha = 0.30f),
@@ -506,19 +543,19 @@ private fun FeedGapMark(mark: GapMark, lanes: LaneGeometry) {
         }
     }
 
-    IntervalText(mark, lanes.feedLabelStart, ink.copy(alpha = 0.85f))
+    IntervalText(mark, lanes.feedLabelStart, panel, ink.copy(alpha = 0.85f))
 }
 
 /** The awake stretch, in the sleep lane, in the nap accent so it belongs to the band above it. */
 @Composable
-private fun AwakeMark(mark: GapMark, lanes: LaneGeometry) {
-    IntervalText(mark, lanes.napLabelStart, napColor)
+private fun AwakeMark(mark: GapMark, lanes: LaneGeometry, panel: Dp) {
+    IntervalText(mark, lanes.napLabelStart, panel, napColor)
 }
 
 @Composable
-private fun IntervalText(mark: GapMark, start: Dp, color: Color) {
+private fun IntervalText(mark: GapMark, start: Dp, panel: Dp, color: Color) {
     Box(
-        Modifier.offset(x = start, y = mark.top).height(mark.height),
+        Modifier.offset(x = start, y = flip(panel, mark.top, mark.height)).height(mark.height),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
@@ -565,7 +602,9 @@ private fun sessionTail(session: FeedSession): String {
 // reading is what this mode is for.
 private const val DpPerMinute = 0.5f
 
-private val DayHeight = (MINUTES_PER_DAY * DpPerMinute).dp
+/** [flipped] in Dp. Time runs upward, so midnight is the panel's bottom edge. */
+private fun flip(panel: Dp, top: Dp, height: Dp): Dp =
+    flipped(panel.value, top.value, height.value).dp
 
 // A label line, and so the least room two labels in one lane may share.
 private const val LabelSeparation = 15f

@@ -47,6 +47,37 @@ fun blockSpan(
     return BlockSpan(startMinute, endMinute)
 }
 
+/**
+ * How many minutes of a day the panel draws.
+ *
+ * A finished day draws all 24 hours. **Today stops at the current hour**, because time runs upward
+ * and the top of today's panel is therefore the part of the day that has not happened. Drawn in
+ * full, that dead space sits between the sheet's edge and the newest record - 82dp of it at 21:16,
+ * and 690dp at 01:00, against a 160dp peek that would then show nothing at all.
+ *
+ * Rounded up to the hour so the grid still ends on a rule, and never under an hour, so a panel a
+ * few minutes after midnight still has somewhere to draw.
+ *
+ * A day in the future keeps its full height. Only a hand-edited time can make one, and clamping it
+ * to nothing would hide the record that created it.
+ */
+fun panelMinutes(date: LocalDate, now: Instant, zone: ZoneId): Int {
+    val here = now.atZone(zone)
+    if (date != here.toLocalDate()) return MINUTES_PER_DAY
+
+    val elapsed = here.hour * 60 + here.minute
+    return (((elapsed + 59) / 60) * 60).coerceIn(60, MINUTES_PER_DAY)
+}
+
+/**
+ * Turns a time-space span into a screen position, given the panel it sits in.
+ *
+ * Time runs **upward**: midnight sits at the panel's bottom edge and the newest minute at its top.
+ * The layout maths is all done in minutes from midnight, and this is the single point where that
+ * becomes a position, so nothing downstream has to think about the direction.
+ */
+fun flipped(panelHeight: Float, top: Float, height: Float): Float = panelHeight - top - height
+
 /** The instant a session finishes, or null while any feed in it is still running. */
 fun FeedSession.endInstant(): Instant? =
     if (feeds.any { it.endTime == null }) null else feeds.mapNotNull { it.endTime }.max()

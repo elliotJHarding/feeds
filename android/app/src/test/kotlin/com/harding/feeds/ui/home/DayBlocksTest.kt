@@ -87,6 +87,46 @@ class DayBlocksTest {
         assertEquals(9 * 60 + 33, span.endMinute)
     }
 
+    // How much of a day the panel draws, and which way up it draws it.
+
+    @Test
+    fun `a finished day draws all 24 hours`() {
+        assertEquals(1440, panelMinutes(date.minusDays(1), at(21, 16), zone))
+    }
+
+    /**
+     * Time runs upward, so the top of today's panel is the part that has not happened. Drawn in
+     * full it puts 82dp of nothing between the sheet's edge and the newest record at 21:16, and
+     * 690dp at 01:00, against a 160dp peek.
+     */
+    @Test
+    fun `today stops at the current hour`() {
+        assertEquals(22 * 60, panelMinutes(date, at(21, 16), zone))
+    }
+
+    @Test
+    fun `a panel just after midnight still has an hour to draw in`() {
+        assertEquals(60, panelMinutes(date, at(0, 5), zone))
+    }
+
+    /** Only a hand-edited time makes one, and clamping it would hide the record that did. */
+    @Test
+    fun `a day in the future keeps its full height`() {
+        assertEquals(1440, panelMinutes(date.plusDays(1), at(21, 16), zone))
+    }
+
+    @Test
+    fun `midnight sits at the panel's bottom edge`() {
+        // A 30-minute record starting at midnight, on a 720dp panel.
+        assertEquals(705f, flipped(panelHeight = 720f, top = 0f, height = 15f))
+    }
+
+    @Test
+    fun `the newest minute sits at the panel's top edge`() {
+        // A record ending at the panel's last minute.
+        assertEquals(0f, flipped(panelHeight = 720f, top = 700f, height = 20f))
+    }
+
     // Block heights. Floor 12, gutter 2, minimum visible 3 - the values the timeline uses.
 
     private fun heights(tops: List<Float>, lengths: List<Float>) =

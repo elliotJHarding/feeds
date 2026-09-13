@@ -168,9 +168,24 @@ than proportional because 199 of those 222 sessions spanned under 24 minutes, wh
 block floor — a stripe's height already cannot be a duration, so it states which sides, in which
 order.
 
-**Later runs downward, and the newest day is at the bottom.** The time-of-day chart already puts
-midnight at the top. `reverseLayout` gives that order and still opens on the newest records, so
-the sheet peek shows what it showed before.
+**Newest first, everywhere.** The day list runs newest at the top and time runs **upward** inside
+each panel, so midnight is its bottom edge. Scrolling down goes back in time in both modes.
+
+The first build ran the other way, following the time-of-day chart's midnight-at-top axis, and two
+things were wrong with it:
+
+- It reversed the compact list, so switching modes reversed the reading.
+- **It made the sheet hard to close.** With `reverseLayout` a downward drag always has older
+  content to scroll into, so the drag that should collapse the sheet never reaches it. (The
+  mechanism is a hypothesis — Material3 sources are not cached locally — but the symptom was
+  reported from the device, and the flip removes it either way: the sheet now opens at the top of
+  the list, where a downward drag has nothing left to scroll.)
+
+**Today's panel stops at the current hour, not at 23:59.** With time upward, the top of today's
+panel is the part of the day that has not happened. Drawn in full that is 82dp of nothing between
+the sheet's edge and the newest record at 21:16, and 690dp at 01:00, against a 160dp peek that
+would then show no records at all. Rounded up to the hour so the grid still ends on a rule, never
+under an hour, and a future day (only a hand-edited time makes one) keeps its full height.
 
 **A block has a 12dp floor, and the geometry keeps the gap open.** 12dp is the largest floor at
 which no session pair in the measured 221 runs into the next, and the worst pair keeps 2 minutes of
