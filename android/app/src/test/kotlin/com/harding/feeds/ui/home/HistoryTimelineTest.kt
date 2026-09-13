@@ -191,6 +191,22 @@ class HistoryTimelineTest {
         assertEquals(null, gapsBeforeFeed(days)[newer.id])
     }
 
+    /**
+     * Records carry seconds, and the screen shows HH:mm, so a printed duration has to be the
+     * difference of the two printed times. The real 13 Sep pair: 12:56:42 to 15:23:08. A raw
+     * measure gives 2h 26m 26s, which prints as 2h 26m against clock readings of 12:56 and 15:23 -
+     * a parent subtracting one from the other gets 2h 27m and the app disagrees with itself.
+     */
+    @Test
+    fun `an interval is the difference of the times as they are shown`() {
+        val older = feed(at(12, 56).plusSeconds(42), at(13, 4))
+        val newer = feed(at(15, 23).plusSeconds(8), at(15, 34))
+
+        val days = buildDayHistory(feeds = listOf(newer, older), naps = emptyList(), zone = zone)
+
+        assertEquals(Duration.ofMinutes(147), gapsBeforeFeed(days)[newer.id])
+    }
+
     // Awake stretches. A different measure from the feed interval, deliberately.
 
     @Test
@@ -257,6 +273,17 @@ class HistoryTimelineTest {
         val days = buildDayHistory(feeds = emptyList(), naps = listOf(second, first), zone = zone)
 
         assertEquals(Duration.ofHours(1), awakeBeforeNap(days)[second.id])
+    }
+
+    /** The real 13 Sep pair: 10:40:43 to 11:58:39, which showed as 1h 17m against 10:40 and 11:58. */
+    @Test
+    fun `an awake stretch is the difference of the times as they are shown`() {
+        val first = nap(at(9, 55).plusSeconds(41), at(10, 40).plusSeconds(43))
+        val second = nap(at(11, 58).plusSeconds(39), at(12, 29))
+
+        val days = buildDayHistory(feeds = emptyList(), naps = listOf(second, first), zone = zone)
+
+        assertEquals(Duration.ofMinutes(78), awakeBeforeNap(days)[second.id])
     }
 
     // The filter

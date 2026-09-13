@@ -28,6 +28,7 @@ import com.harding.feeds.ui.components.DateTimeRow
 import com.harding.feeds.ui.components.ScrubbableAmount
 import com.harding.feeds.ui.components.SideToggle
 import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.gapBetween
 import java.time.Duration
 import java.time.Instant
 
@@ -116,10 +117,13 @@ fun FeedEditSheet(
                 }
                 Spacer(Modifier.height(16.dp))
 
+                // Bound to a local: gapBetween takes a non-null Instant, and endTime is a
+                // delegated property that Kotlin will not smart-cast.
+                val duration = endTime?.let { gapBetween(startTime, it) }
                 Text(
                     text = when {
                         endsBeforeStart -> "End is before start"
-                        endTime != null -> "Duration ${formatHoursMinutes(Duration.between(startTime, endTime))}"
+                        duration != null -> "Duration ${formatHoursMinutes(duration)}"
                         else -> ""
                     },
                     style = MaterialTheme.typography.bodyMedium,

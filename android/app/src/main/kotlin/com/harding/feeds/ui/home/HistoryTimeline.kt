@@ -3,6 +3,7 @@ package com.harding.feeds.ui.home
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.ui.components.EventFilter
+import com.harding.feeds.ui.gapBetween
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -102,7 +103,7 @@ fun buildDayHistory(
  */
 fun gapsBeforeFeed(days: List<DayHistory>): Map<String, Duration> = buildMap {
     days.flatMap { it.feeds }.zipWithNext { newer, older ->
-        val gap = Duration.between(older.startTime, newer.startTime)
+        val gap = gapBetween(older.startTime, newer.startTime)
         if (gap >= Duration.ofMinutes(1)) put(newer.id, gap)
     }
 }
@@ -128,7 +129,7 @@ fun awakeBeforeNap(days: List<DayHistory>): Map<String, Duration> = buildMap {
     days.forEach { day ->
         day.naps.zipWithNext { newer, older ->
             val end = older.endTime ?: return@zipWithNext
-            val awake = Duration.between(end, newer.startTime)
+            val awake = gapBetween(end, newer.startTime)
             if (awake >= Duration.ofMinutes(1)) put(newer.id, awake)
         }
     }

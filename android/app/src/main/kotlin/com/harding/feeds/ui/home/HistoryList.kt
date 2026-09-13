@@ -41,6 +41,7 @@ import com.harding.feeds.ui.components.MoonGlyph
 import com.harding.feeds.ui.dayLabel
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.gapBetween
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.napColor
 import com.harding.feeds.ui.onAccent
@@ -283,7 +284,7 @@ private fun NapCard(nap: NapEntity, onNapTap: (NapEntity) -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 } else {
-                    val slept = Duration.between(nap.startTime, end).coerceAtLeast(Duration.ZERO)
+                    val slept = gapBetween(nap.startTime, end).coerceAtLeast(Duration.ZERO)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End,
@@ -396,9 +397,9 @@ private fun FeedRow(feed: FeedEntity, onTap: () -> Unit) {
                 )
                 else -> ValueBar(
                     label = formatHoursMinutes(
-                        Duration.between(feed.startTime, end).coerceAtLeast(Duration.ZERO)
+                        gapBetween(feed.startTime, end).coerceAtLeast(Duration.ZERO)
                     ),
-                    fraction = Duration.between(feed.startTime, end).toMillis().toFloat() /
+                    fraction = gapBetween(feed.startTime, end).toMillis().toFloat() /
                         FeedBarCap.toMillis(),
                     barColor = side?.sideColor ?: MaterialTheme.colorScheme.surfaceVariant,
                 )
@@ -459,14 +460,14 @@ private fun ValueBar(
 private fun completedFeedTotal(feeds: List<FeedEntity>): Duration =
     feeds.fold(Duration.ZERO) { acc, feed ->
         val end = feed.endTime ?: return@fold acc
-        acc + Duration.between(feed.startTime, end).coerceAtLeast(Duration.ZERO)
+        acc + gapBetween(feed.startTime, end).coerceAtLeast(Duration.ZERO)
     }
 
 /** Sums completed naps only; an in-progress nap contributes once it ends. */
 private fun completedNapTotal(naps: List<NapEntity>): Duration =
     naps.fold(Duration.ZERO) { acc, nap ->
         val end = nap.endTime ?: return@fold acc
-        acc + Duration.between(nap.startTime, end).coerceAtLeast(Duration.ZERO)
+        acc + gapBetween(nap.startTime, end).coerceAtLeast(Duration.ZERO)
     }
 
 private fun counted(n: Int, noun: String) = "$n $noun" + if (n == 1) "" else "s"

@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.ui.components.DateTimeRow
 import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.gapBetween
 import java.time.Duration
 import java.time.Instant
 
@@ -89,10 +90,13 @@ fun NapEditSheet(
             }
             Spacer(Modifier.height(16.dp))
 
+            // Bound to a local: gapBetween takes a non-null Instant, and endTime is a delegated
+            // property that Kotlin will not smart-cast.
+            val slept = endTime?.let { gapBetween(startTime, it) }
             Text(
                 text = when {
                     endsBeforeStart -> "Woke before the nap started"
-                    endTime != null -> "Slept ${formatHoursMinutes(Duration.between(startTime, endTime))}"
+                    slept != null -> "Slept ${formatHoursMinutes(slept)}"
                     else -> ""
                 },
                 style = MaterialTheme.typography.bodyMedium,

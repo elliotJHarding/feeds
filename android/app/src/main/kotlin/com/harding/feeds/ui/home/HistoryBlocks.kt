@@ -42,6 +42,7 @@ import com.harding.feeds.ui.components.EventFilter
 import com.harding.feeds.ui.formatAmount
 import com.harding.feeds.ui.formatClockTime
 import com.harding.feeds.ui.formatHoursMinutes
+import com.harding.feeds.ui.gapBetween
 import com.harding.feeds.ui.label
 import com.harding.feeds.ui.napColor
 import com.harding.feeds.ui.sideColor
@@ -389,7 +390,7 @@ private fun NapBand(placed: Placed<NapEntity>, lanes: LaneGeometry, onTap: (NapE
         start = lanes.napLabelStart,
         width = lanes.plotEnd - lanes.napLabelStart,
         lead = "${formatClockTime(nap.startTime)} – ${end?.let { formatClockTime(it) } ?: "…"}",
-        tail = end?.let { formatHoursMinutes(Duration.between(nap.startTime, it)) } ?: "napping",
+        tail = end?.let { formatHoursMinutes(gapBetween(nap.startTime, it)) } ?: "napping",
         blockTop = placed.top,
         blockHeight = placed.height,
         onTap = { onTap(nap) },
@@ -551,7 +552,7 @@ private fun sessionTail(session: FeedSession): String {
         return single.amountMl?.let(::formatAmount) ?: "bottle"
     }
 
-    val span = formatHoursMinutes(Duration.between(session.startInstant(), end))
+    val span = formatHoursMinutes(gapBetween(session.startInstant(), end))
     return when {
         single == null -> "$span · ${session.feeds.size} feeds"
         single.side != null -> "$span · ${single.side.label}"

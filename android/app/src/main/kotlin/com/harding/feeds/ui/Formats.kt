@@ -10,6 +10,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -21,6 +22,25 @@ fun Instant.toLocalDate(zone: ZoneId = ZoneId.systemDefault()): LocalDate = atZo
 
 fun formatClockTime(instant: Instant, zone: ZoneId = ZoneId.systemDefault()): String =
     instant.toLocalTime(zone).format(TIME_FORMAT)
+
+/**
+ * The gap between two times **as the app shows them**: both truncated to the minute first.
+ *
+ * Records carry seconds - `12:56:42` to `15:23:08` is 2h 26m 26s - and a raw `Duration.between`
+ * truncates that to 2h 26m while the two clock readings on screen say 12:56 and 15:23. A parent
+ * who subtracts one from the other gets 2h 27m and the app disagrees with itself. Truncating both
+ * ends first makes every printed duration the difference of the two printed times.
+ *
+ * Truncation is on the instant rather than the local time, which is the same boundary: every real
+ * zone offset is a whole number of minutes.
+ *
+ * Not for [com.harding.feeds.ui.home.pauseBefore]. That threshold decides session grouping and is
+ * never displayed, so it should keep the full precision it has.
+ */
+fun gapBetween(from: Instant, to: Instant): Duration = Duration.between(
+    from.truncatedTo(ChronoUnit.MINUTES),
+    to.truncatedTo(ChronoUnit.MINUTES),
+)
 
 /** "2h 40m" for headers and durations; minute granularity, never negative. */
 fun formatHoursMinutes(duration: Duration): String {
