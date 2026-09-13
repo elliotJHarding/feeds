@@ -136,15 +136,35 @@ per minute shows about 16 hours, and 1.0dp shows about 12.
 came as close as 0.7 minutes apart, and 29 of 281 pairs fell under 15 minutes. At this scale those
 blocks would overlap. Two consecutive sessions were never closer than 26 minutes, because the
 20-minute session rule puts a floor under the interval. That floor is what keeps the clock labels
-legible. Each feed still draws its own block inside the session, so a side switch stays visible.
+legible.
+
+**A session's feeds take equal stripes down its block**, oldest at the top. 45 of 222 sessions ran
+both sides, so a single-colour block would misreport a fifth of them. The stripes are equal rather
+than proportional because 199 of those 222 sessions spanned under 24 minutes, which is under the
+block floor — a stripe's height already cannot be a duration, so it states which sides, in which
+order.
 
 **Later runs downward, and the newest day is at the bottom.** The time-of-day chart already puts
 midnight at the top. `reverseLayout` gives that order and still opens on the newest records, so
 the sheet peek shows what it showed before.
 
-**A feed block has a 7dp floor.** Feed length is 1.7 minutes at the tenth percentile and 7.1 at
-the median, so below the floor a feed is a hairline. Lengths near the floor are therefore not
-comparable, and duration comparison stays the compact list's job.
+**A block has a 12dp floor, and the geometry keeps the gap open.** 12dp is the largest floor at
+which no session pair in the measured 221 runs into the next, and the worst pair keeps 2 minutes of
+air. A 21-day sample cannot rule out a tighter pair later, so a block grows towards the floor only
+as far as the next block allows and always leaves a 2dp gutter. A block is never shorter than its
+true length, so a long record that a hand-edited time makes overlap still draws whole. Lengths near
+the floor are not comparable, and duration comparison stays the compact list's job.
+
+**Feed intervals are written in the space they measure.** A dotted spine down the block column with
+the value beside it, mirroring the compact list's spine between cards. Both modes read one shared
+`gapsBeforeFeed`, so they cannot print different numbers for the same pair. The mark appears only
+where there is at least 30dp — an hour — of clear space: a short interval does not read as empty,
+and the value would crowd the clock labels on the same rail. Measured session intervals run 66
+minutes at the lower quartile and 122 at the median, so most clear the bar.
+
+The blank is otherwise honest, and the missing ground layer is naps, not the design. Blocks cover
+18.7% of a measured day. The database holds **1 nap, of 0 minutes**, so nothing fills the rest. A
+newborn's 14–16 hours of sleep would be 58–67% of the axis.
 
 **A label slides down when it cannot clear the label above it.** A label line is 15dp and the
 worst measured pair sits 13dp apart, so the nudge fires on about one pair in 221. Only the label

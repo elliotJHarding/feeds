@@ -87,6 +87,41 @@ class DayBlocksTest {
         assertEquals(9 * 60 + 33, span.endMinute)
     }
 
+    // Block heights. Floor 12, gutter 2, minimum visible 3 - the values the timeline uses.
+
+    private fun heights(tops: List<Float>, lengths: List<Float>) =
+        blockHeights(tops, lengths, floor = 12f, gutter = 2f, minVisible = 3f)
+
+    @Test
+    fun `a short block grows to the floor when it has room`() {
+        assertEquals(listOf(12f, 12f), heights(listOf(0f, 60f), listOf(4f, 4f)))
+    }
+
+    @Test
+    fun `a block never grows into the gutter before the next block`() {
+        // 8dp apart, so the first may take 6dp and still leave the 2dp gutter.
+        assertEquals(listOf(6f, 12f), heights(listOf(0f, 8f), listOf(4f, 4f)))
+    }
+
+    /** Shrinking a long record would state a false duration, so its own length always wins. */
+    @Test
+    fun `a long block keeps its whole length even where it overlaps the next`() {
+        assertEquals(listOf(90f, 12f), heights(listOf(0f, 30f), listOf(90f, 5f)))
+    }
+
+    /** A bottle has no length. Without a lower bound a crowded one would draw nothing at all. */
+    @Test
+    fun `a bottle just before another block still draws`() {
+        assertEquals(listOf(3f, 12f), heights(listOf(0f, 2f), listOf(0f, 5f)))
+    }
+
+    @Test
+    fun `the last block in a lane has nothing to clear`() {
+        assertEquals(listOf(12f), heights(listOf(600f), listOf(1f)))
+    }
+
+    // Label placement
+
     @Test
     fun `labels far enough apart are left where they are`() {
         assertEquals(listOf(0f, 40f, 100f), nudgedLabelTops(listOf(0f, 40f, 100f), 15f))

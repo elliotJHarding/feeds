@@ -82,25 +82,9 @@ fun HistoryList(
 ) {
     val today = LocalDate.now()
 
-    // The interval preceding each feed, keyed by feed id: this feed's start minus the
-    // next-older feed's start (start-to-start needs no end time, so an in-progress predecessor
-    // still yields a gap). Computed over the flattened list so the overnight gap lands on the
-    // first feed of a day even though its predecessor sits in the previous day group. Only
-    // session-leading feeds are looked up - pauses inside a session render from their own
-    // end-to-start measure. Overlaps (negative gaps from hand-edited times) and sub-minute
-    // gaps produce no row.
-    //
-    // Feeds only, and a nap never replaces a gap: the gap measures feeding frequency, which is
-    // what the every-N-hours rule works from, and whether the baby slept through it does not
-    // change that number. The pair reads as "she went 3h 10m, and slept 1h 15m of it".
-    val gapsBefore = remember(days) {
-        buildMap {
-            days.flatMap { it.feeds }.zipWithNext { newer, older ->
-                val gap = Duration.between(older.startTime, newer.startTime)
-                if (gap >= Duration.ofMinutes(1)) put(newer.id, gap)
-            }
-        }
-    }
+    // See gapsBeforeFeed for the measure and why it is feeds-only. Only session-leading feeds are
+    // looked up here - pauses inside a session render from their own end-to-start measure.
+    val gapsBefore = remember(days) { gapsBeforeFeed(days) }
 
     if (days.isEmpty()) {
         Box(modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.TopCenter) {

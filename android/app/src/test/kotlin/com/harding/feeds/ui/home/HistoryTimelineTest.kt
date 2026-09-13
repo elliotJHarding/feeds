@@ -1,6 +1,7 @@
 package com.harding.feeds.ui.home
 
 import com.harding.feeds.ui.components.EventFilter
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -120,6 +121,74 @@ class HistoryTimelineTest {
         )
 
         assertEquals(listOf(LocalDate.of(2026, 7, 23), LocalDate.of(2026, 7, 22)), days.map { it.date })
+    }
+
+    // Feed intervals. Both history modes read these, so the two cannot disagree.
+
+    @Test
+    fun `the interval before a feed is measured start to start`() {
+        val older = feed(at(9), at(9, 40))
+        val newer = feed(at(12), at(12, 10))
+
+        val days = buildDayHistory(feeds = listOf(newer, older), naps = emptyList(), zone = zone)
+
+        // 3h, not the 2h 20m an end-to-start measure would give.
+        assertEquals(Duration.ofHours(3), gapsBeforeFeed(days)[newer.id])
+    }
+
+    /** Start-to-start needs no end time, so a running predecessor still yields an interval. */
+    @Test
+    fun `a still-running predecessor still yields an interval`() {
+        val running = feed(at(9), end = null)
+        val newer = feed(at(11), at(11, 10))
+
+        val days = buildDayHistory(feeds = listOf(newer, running), naps = emptyList(), zone = zone)
+
+        assertEquals(Duration.ofHours(2), gapsBeforeFeed(days)[newer.id])
+    }
+
+    /** The overnight interval must survive the day grouping, or the longest one on record is lost. */
+    @Test
+    fun `the overnight interval crosses the day boundary`() {
+        val lastNight = LocalDate.of(2026, 7, 22).atTime(22, 30).atZone(zone).toInstant()
+        val morning = feed(at(5, 30), at(5, 40))
+
+        val days = buildDayHistory(
+            feeds = listOf(morning, feed(lastNight, lastNight.plusSeconds(600))),
+            naps = emptyList(),
+            zone = zone,
+        )
+
+        assertEquals(Duration.ofHours(7), gapsBeforeFeed(days)[morning.id])
+    }
+
+    /** A nap never replaces a feed interval - the interval measures feeding frequency. */
+    @Test
+    fun `a nap in between does not change the interval`() {
+        val older = feed(at(9), at(9, 10))
+        val newer = feed(at(12), at(12, 10))
+
+        val days = buildDayHistory(
+            feeds = listOf(newer, older),
+            naps = listOf(nap(at(10), at(11, 15))),
+            zone = zone,
+        )
+
+        assertEquals(Duration.ofHours(3), gapsBeforeFeed(days)[newer.id])
+    }
+
+    /**
+     * Two feeds logged seconds apart are one action, not an interval. Nothing is printed rather
+     * than a "0m" that would read as a real measurement.
+     */
+    @Test
+    fun `a sub-minute interval is not printed`() {
+        val older = feed(at(9), at(9, 10))
+        val newer = feed(at(9).plusSeconds(30), at(9, 5))
+
+        val days = buildDayHistory(feeds = listOf(newer, older), naps = emptyList(), zone = zone)
+
+        assertEquals(null, gapsBeforeFeed(days)[newer.id])
     }
 
     // The filter

@@ -60,6 +60,32 @@ fun TimelineItem.spanIn(date: LocalDate, zone: ZoneId, now: Instant): BlockSpan 
 }
 
 /**
+ * Heights for one lane of blocks, from [tops] and [lengths] in ascending order of top.
+ *
+ * A short record needs a floor or it draws as a hairline, but a floor tall enough to read is also
+ * tall enough to swallow the gap to the next record - and that gap is what the mode exists to
+ * show. So a block grows towards [floor] only as far as the next block's start allows, always
+ * leaving [gutter] between the two.
+ *
+ * Three rules, in order of who wins:
+ * 1. A block is never shorter than its true length. A long record that a hand-edited time makes
+ *    overlap the next one still draws its whole length; shrinking it would state a false duration.
+ * 2. Otherwise a block grows to [floor], or to the room before the next block, whichever is less.
+ * 3. Nothing draws below [minVisible]. A bottle has no length at all, so without this a bottle
+ *    logged shortly before a feed would vanish.
+ */
+fun blockHeights(
+    tops: List<Float>,
+    lengths: List<Float>,
+    floor: Float,
+    gutter: Float,
+    minVisible: Float,
+): List<Float> = tops.indices.map { index ->
+    val room = tops.getOrNull(index + 1)?.let { it - tops[index] - gutter } ?: Float.MAX_VALUE
+    maxOf(lengths[index], minOf(floor, room), minVisible)
+}
+
+/**
  * Pushes labels apart so no two overlap, taking [tops] in ascending order and returning the
  * position each label is actually drawn at.
  *

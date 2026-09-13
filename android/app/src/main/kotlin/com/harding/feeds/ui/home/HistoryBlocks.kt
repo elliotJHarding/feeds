@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -58,22 +59,22 @@ import java.time.ZoneId
  * Pixel 10, so a whole day lands on one screen. That is the point of the mode, and everything
  * below follows from it.
  *
- * **The block is the session, not the feed.** Measured over the last 21 days of real records, two
- * consecutive feeds came as close as 0.7 minutes apart and 29 of 281 pairs were under 15 minutes;
- * at 0.5dp per minute those blocks would draw on top of each other. Two consecutive *sessions*
- * were never closer than 26 minutes, because [SessionPauseThreshold] puts a 20-minute floor under
- * the interval. That floor is what keeps the clock labels legible. Inside a session each feed
- * still draws its own coloured block, so an L-to-R switch stays visible; the tap target is the
- * session, since a 7dp block cannot be hit.
+ * **One block per session, striped by its feeds.** Measured over 21 days of real records, two
+ * consecutive feeds came as close as 0.7 minutes apart, so a block per feed would draw on top of
+ * itself at this scale. Two consecutive *sessions* were never closer than 26 minutes, because
+ * [SessionPauseThreshold] puts a 20-minute floor under the interval. So the session is the block,
+ * and each feed in it takes an equal stripe of that block in time order - 45 of 222 sessions ran
+ * both sides, and a single-colour block would misreport every one of them.
+ *
+ * The stripes are equal rather than proportional on purpose. 199 of those 222 sessions spanned
+ * under 24 minutes, which is under the block floor, so a stripe's height already cannot be a
+ * duration. It says which sides, in which order. Duration comparison stays [HistoryList]'s job,
+ * and its bars are built for it.
  *
  * **Later runs downward, and the newest day is at the bottom.** The app's own time-of-day chart
  * already puts midnight at the top with hours increasing downward. `reverseLayout` gives that
  * ordering while still opening on the newest records, so the sheet's peek shows what the compact
  * list's peek showed.
- *
- * **A feed block has a 7dp floor.** Feed length runs 1.7 minutes at the tenth percentile and 7.1
- * at the median, so below the floor a feed is a hairline. Lengths therefore stop being comparable
- * near the floor - duration comparison stays [HistoryList]'s job, and its bars are built for it.
  *
  * Like [HistoryList] this does NOT take the ticking clock. It takes [nowEpochMinute], a minute
  * counter, so a running record's block grows once a minute instead of recomposing every block on
@@ -102,6 +103,8 @@ fun HistoryBlocks(
 
     val today = LocalDate.now(zone)
     val now = remember(nowEpochMinute) { Instant.ofEpochSecond(nowEpochMinute * 60) }
+    // Shared with the compact list, so the two modes cannot print different numbers for one pair.
+    val gapsBefore = remember(days) { gapsBeforeFeed(days) }
 
     // reverseLayout stacks item 0 at the bottom and opens there. `days` is newest-first, so the
     // newest day lands at the bottom under the thumb and older days run upward, while each day
@@ -113,7 +116,7 @@ fun HistoryBlocks(
     ) {
         days.forEach { day ->
             item(key = "day-${day.date}") {
-                DayPanel(day, today, filter, zone, now, onSessionTap, onNapTap)
+                DayPanel(day, today, filter, zone, now, gapsBefore, onSessionTap, onNapTap)
             }
         }
     }
@@ -127,31 +130,33 @@ private fun DayPanel(
     filter: EventFilter,
     zone: ZoneId,
     now: Instant,
+    gapsBefore: Map<String, Duration>,
     onSessionTap: (FeedSession) -> Unit,
     onNapTap: (NapEntity) -> Unit,
 ) {
-    val placed = remember(day, now) { place(day, zone, now) }
+    val layout = remember(day, now, gapsBefore) { layOut(day, zone, now, gapsBefore) }
 
     Column {
         DayHeader(day, today)
         Box(Modifier.fillMaxWidth().height(DayHeight)) {
             HourGrid()
 
-            // Three passes, so the z-order is fixed rather than incidental: nap bands are ground,
-            // feed blocks sit on them, and every label reads over both.
-            placed.forEach { block ->
-                if (block.item is TimelineItem.Napping) NapBand(block, filter)
-            }
-            placed.forEach { block ->
-                (block.item as? TimelineItem.Feeding)?.let { FeedBlocks(it.session, day.date, zone, now) }
-            }
-            placed.forEach { block -> BlockLabel(block, onSessionTap, onNapTap) }
+            // Four passes, so the z-order is fixed rather than incidental: nap bands are ground,
+            // the interval marks sit in the space between blocks, session blocks sit on the
+            // bands, and every label reads over all of it.
+            layout.napBars.forEach { NapBand(it, filter) }
+            if (filter != EventFilter.NAPS) layout.feedGaps.forEach { FeedGapMark(it) }
+            layout.sessionBars.forEach { SessionBlock(it) }
+            layout.items.forEach { BlockLabel(it, onSessionTap, onNapTap) }
         }
     }
 }
 
-/** A record placed on the axis: where its block starts, how tall it is, where its label goes. */
-private data class PlacedBlock(
+/** One drawn rectangle and the record behind it. */
+private data class Bar<T>(val record: T, val top: Dp, val height: Dp)
+
+/** A record's label and tap target, which follow the timeline item rather than the drawn bar. */
+private data class PlacedItem(
     val item: TimelineItem,
     val top: Dp,
     val height: Dp,
@@ -159,26 +164,97 @@ private data class PlacedBlock(
 )
 
 /**
+ * The interval between two feeding sessions, drawn in the space it measures. [connected] is false
+ * where the interval began on the previous day, since a day panel cannot draw across midnight.
+ */
+private data class GapMark(val top: Dp, val height: Dp, val text: String, val connected: Boolean)
+
+private data class DayLayout(
+    val sessionBars: List<Bar<FeedSession>>,
+    val napBars: List<Bar<NapEntity>>,
+    val feedGaps: List<GapMark>,
+    val items: List<PlacedItem>,
+)
+
+/**
  * Places one day's records, oldest first so the label nudge only ever pushes downward - a nudge
  * that pushed upward could walk a label off the top of the panel.
+ *
+ * Sessions and naps are laid out as two lanes, because a feed during a nap is meant to sit on the
+ * band. Within a lane [blockHeights] keeps the blocks apart.
  */
-private fun place(day: DayHistory, zone: ZoneId, now: Instant): List<PlacedBlock> {
+private fun layOut(
+    day: DayHistory,
+    zone: ZoneId,
+    now: Instant,
+    gapsBefore: Map<String, Duration>,
+): DayLayout {
     val ordered = day.items.asReversed()
     val spans = ordered.map { it.spanIn(day.date, zone, now) }
-    val tops = spans.map { it.startMinute * DpPerMinute }
-    val labelTops = nudgedLabelTops(tops, LabelSeparation)
+    val labelTops = nudgedLabelTops(spans.map { it.startMinute * DpPerMinute }, LabelSeparation)
 
-    return ordered.mapIndexed { index, item ->
-        PlacedBlock(
+    val items = ordered.mapIndexed { index, item ->
+        PlacedItem(
             item = item,
-            top = tops[index].dp,
-            height = blockHeight(spans[index].lengthMinutes),
+            top = (spans[index].startMinute * DpPerMinute).dp,
+            height = (spans[index].lengthMinutes * DpPerMinute).dp,
             labelTop = labelTops[index].dp,
         )
     }
+
+    fun <T> lane(records: List<T>, span: (T) -> BlockSpan): List<Bar<T>> {
+        val spansOf = records.map(span)
+        val tops = spansOf.map { it.startMinute * DpPerMinute }
+        val heights = blockHeights(
+            tops = tops,
+            lengths = spansOf.map { it.lengthMinutes * DpPerMinute },
+            floor = BlockFloor,
+            gutter = BlockGutter,
+            minVisible = MinVisibleBlock,
+        )
+        return records.mapIndexed { index, record -> Bar(record, tops[index].dp, heights[index].dp) }
+    }
+
+    val sessionBars = lane(ordered.filterIsInstance<TimelineItem.Feeding>().map { it.session }) {
+        blockSpan(it.startInstant(), it.endInstant(), day.date, zone, now)
+    }
+
+    return DayLayout(
+        sessionBars = sessionBars,
+        napBars = lane(ordered.filterIsInstance<TimelineItem.Napping>().map { it.nap }) {
+            blockSpan(it.startTime, it.endTime, day.date, zone, now)
+        },
+        feedGaps = feedGaps(sessionBars, gapsBefore),
+        items = items,
+    )
 }
 
-private fun blockHeight(minutes: Int): Dp = maxOf((minutes * DpPerMinute).dp, MinBlockHeight)
+/**
+ * An interval mark for the space above each session block.
+ *
+ * Only where the space is at least [GapMarkMinSpace]. A short interval does not read as empty, so
+ * labelling it would only add clutter - and the label needs the room anyway, or it would collide
+ * with the clock labels on the same rail. Measured session intervals run 66 minutes at the lower
+ * quartile and 122 at the median, so most intervals clear the bar and the tight ones stay quiet.
+ */
+private fun feedGaps(
+    bars: List<Bar<FeedSession>>,
+    gapsBefore: Map<String, Duration>,
+): List<GapMark> = bars.mapIndexedNotNull { index, bar ->
+    // The interval is keyed on the session's oldest feed, the same lookup the compact list uses.
+    val gap = gapsBefore[bar.record.feeds.last().id] ?: return@mapIndexedNotNull null
+    val previous = bars.getOrNull(index - 1)
+    val spaceTop = previous?.let { it.top + it.height } ?: 0.dp
+    val space = bar.top - spaceTop
+    if (space < GapMarkMinSpace) return@mapIndexedNotNull null
+
+    GapMark(
+        top = spaceTop,
+        height = space,
+        text = formatHoursMinutes(gap),
+        connected = previous != null,
+    )
+}
 
 /**
  * The hour axis: a hairline an hour, a heavier rule every six, and a label every two. Drawn on a
@@ -222,39 +298,85 @@ private fun HourGrid() {
 }
 
 /**
- * A nap: a soft band across the whole plot, behind the feed blocks. A nap is hours where a feed is
- * minutes, so it reads as ground rather than as another event on the same scale - the treatment
+ * A nap: a soft band across the whole plot, behind the session blocks. A nap is hours where a feed
+ * is minutes, so it reads as ground rather than as another event on the same scale - the treatment
  * the charts already use. Under the Naps filter nothing sits on top of it, so it deepens.
  */
 @Composable
-private fun NapBand(block: PlacedBlock, filter: EventFilter) {
+private fun NapBand(bar: Bar<NapEntity>, filter: EventFilter) {
     Box(
         Modifier
-            .offset(y = block.top)
+            .offset(y = bar.top)
             .padding(start = RailWidth, end = PlotEndInset)
             .fillMaxWidth()
-            .height(block.height)
+            .height(bar.height)
             .clip(RoundedCornerShape(9.dp))
             .background(napColor.copy(alpha = if (filter == EventFilter.NAPS) 0.85f else 0.32f)),
     )
 }
 
 /**
- * One block per feed, at each feed's own minutes. The session is the unit for reading and for
- * tapping, but drawing per feed is what keeps a side switch inside a session visible.
+ * The interval between two feeding sessions, written in the space it measures.
+ *
+ * A dotted spine down the middle of the block column, with the value on the clock labels' rail at
+ * the midpoint. The compact list puts its intervals on a dotted spine between cards too, so the
+ * two modes read the same way. The spine is dropped where the interval began on the previous day:
+ * the value still shows, but a line from the top of the panel would say the interval started at
+ * midnight.
  */
 @Composable
-private fun FeedBlocks(session: FeedSession, date: LocalDate, zone: ZoneId, now: Instant) {
-    session.feeds.forEach { feed ->
-        val span = blockSpan(feed.startTime, feed.endTime, date, zone, now)
-        Box(
-            Modifier
-                .offset(x = BlockLeft, y = (span.startMinute * DpPerMinute).dp)
-                .width(BlockWidth)
-                .height(blockHeight(span.lengthMinutes))
-                .clip(RoundedCornerShape(5.dp))
-                .background(feed.blockColor()),
+private fun FeedGapMark(mark: GapMark) {
+    val ink = MaterialTheme.colorScheme.onSurfaceVariant
+
+    if (mark.connected) {
+        Box(Modifier.offset(y = mark.top).padding(start = BlockLeft).height(mark.height)) {
+            Canvas(Modifier.width(BlockWidth).fillMaxSize()) {
+                drawLine(
+                    color = ink.copy(alpha = 0.28f),
+                    start = Offset(size.width / 2f, 3.dp.toPx()),
+                    end = Offset(size.width / 2f, size.height - 3.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(
+                        floatArrayOf(2.dp.toPx(), 4.dp.toPx()),
+                    ),
+                )
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .offset(y = mark.top)
+            .padding(start = LabelStart)
+            .height(mark.height),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Text(
+            mark.text,
+            style = MaterialTheme.typography.labelMedium,
+            color = ink.copy(alpha = 0.7f),
+            maxLines = 1,
         )
+    }
+}
+
+/**
+ * One session, as one block. Its feeds take equal stripes down it, oldest at the top so the
+ * stripes run the same way as the axis. A session of one feed is therefore a plain block, and two
+ * feeds on the same side read as one block too, because the stripes share a colour.
+ */
+@Composable
+private fun SessionBlock(bar: Bar<FeedSession>) {
+    Column(
+        Modifier
+            .offset(x = BlockLeft, y = bar.top)
+            .width(BlockWidth)
+            .height(bar.height)
+            .clip(RoundedCornerShape(5.dp)),
+    ) {
+        bar.record.feeds.asReversed().forEach { feed ->
+            Box(Modifier.weight(1f).fillMaxWidth().background(feed.blockColor()))
+        }
     }
 }
 
@@ -270,18 +392,18 @@ private fun FeedEntity.blockColor(): Color = when {
  * The clock time, in a fixed column beside the blocks, and the tap target for the record.
  *
  * The tap box covers the block and its label together and never falls below [MinTapHeight], so a
- * 7dp block is still reachable. Where two boxes overlap the later one wins, which is the lower of
- * the two - the one whose label was nudged down and therefore the harder of the two to aim at.
+ * small block is still reachable. Where two boxes overlap the later one wins, which is the lower
+ * of the two - the one whose label was nudged down and therefore the harder of the two to aim at.
  */
 @Composable
 private fun BlockLabel(
-    block: PlacedBlock,
+    placed: PlacedItem,
     onSessionTap: (FeedSession) -> Unit,
     onNapTap: (NapEntity) -> Unit,
 ) {
-    val tapTop = minOf(block.top, block.labelTop)
-    val tapBottom = maxOf(block.top + block.height, block.labelTop + LabelSeparation.dp)
-    val onTap = when (val item = block.item) {
+    val tapTop = minOf(placed.top, placed.labelTop)
+    val tapBottom = maxOf(placed.top + placed.height, placed.labelTop + LabelSeparation.dp)
+    val onTap = when (val item = placed.item) {
         is TimelineItem.Feeding -> ({ onSessionTap(item.session) })
         is TimelineItem.Napping -> ({ onNapTap(item.nap) })
     }
@@ -296,7 +418,7 @@ private fun BlockLabel(
     ) {
         Row(
             Modifier
-                .offset(y = block.labelTop - tapTop)
+                .offset(y = placed.labelTop - tapTop)
                 .padding(start = LabelStart - RailWidth),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -304,17 +426,17 @@ private fun BlockLabel(
             // The moon keeps a nap from reading as a feed on the letter alone. The band already
             // carries the nap accent, but the accent is colour, and colour cannot be the only
             // encoding.
-            if (block.item is TimelineItem.Napping) {
+            if (placed.item is TimelineItem.Napping) {
                 MoonGlyph(napColor, glyphSize = 13.dp)
             }
             Text(
-                leadText(block.item),
+                leadText(placed.item),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
             Text(
-                tailText(block.item),
+                tailText(placed.item),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -377,10 +499,26 @@ private val DayHeight = (MINUTES_PER_DAY * DpPerMinute).dp
 // came in 21 days, which is 13dp here, so the nudge fires on about one pair in 221.
 private const val LabelSeparation = 15f
 
-// Below this a feed is a hairline: feed length is 1.7 minutes at the tenth percentile.
-private val MinBlockHeight = 7.dp
+/**
+ * How tall a block grows when its record is too short to read - 24 minutes of the axis.
+ *
+ * 12dp is the largest floor at which no session pair in the measured 221 runs into the next, and
+ * the worst pair still keeps 2 minutes of air. The sample cannot rule out a tighter pair in
+ * future, so [blockHeights] enforces the separation as well rather than trusting this number.
+ */
+private const val BlockFloor = 12f
 
-// Small, but a 7dp block is unhittable, and the label shares the box.
+// Kept clear between two blocks in one lane, so a gap always reads as a gap.
+private const val BlockGutter = 2f
+
+// A bottle has no length at all, so it needs a size of its own when the next block crowds it.
+private const val MinVisibleBlock = 3f
+
+// The least clear space an interval mark is written into - an hour of the axis. Below this the
+// space does not read as empty, and the value would crowd the clock labels on the same rail.
+private val GapMarkMinSpace = 30.dp
+
+// Small, but a short block is unhittable, and the label shares the box.
 private val MinTapHeight = 24.dp
 
 private val RailWidth = 34.dp

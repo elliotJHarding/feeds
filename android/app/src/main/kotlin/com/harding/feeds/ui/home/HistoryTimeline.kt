@@ -3,6 +3,7 @@ package com.harding.feeds.ui.home
 import com.harding.feeds.data.local.entity.FeedEntity
 import com.harding.feeds.data.local.entity.NapEntity
 import com.harding.feeds.ui.components.EventFilter
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -78,6 +79,32 @@ fun buildDayHistory(
                 items = buildTimeline(groupIntoSessions(dayFeeds), dayNaps),
             )
         }
+}
+
+/**
+ * The feed interval preceding each feed, keyed by feed id: this feed's start minus the next-older
+ * feed's start.
+ *
+ * Start-to-start, because that is how feeding frequency is measured, and it needs no end time, so
+ * a still-running predecessor still yields an interval. Computed over the flattened list, so the
+ * overnight interval lands on the first feed of a day even though its predecessor sits in the
+ * previous day group.
+ *
+ * **Feeds only, and a nap never replaces one.** The interval measures feeding frequency, which is
+ * what the every-N-hours rule works from, and whether the baby slept through it does not change
+ * that number. The pair reads as "she went 3h 10m, and slept 1h 15m of it".
+ *
+ * Both history modes read this, so the two can never print different numbers for the same pair.
+ *
+ * Feeds arrive newest-first from [buildDayHistory], so an interval is never negative however the
+ * times were hand-edited. A sub-minute interval produces no entry: two feeds logged seconds apart
+ * are one action, and "0m" would read as a measurement.
+ */
+fun gapsBeforeFeed(days: List<DayHistory>): Map<String, Duration> = buildMap {
+    days.flatMap { it.feeds }.zipWithNext { newer, older ->
+        val gap = Duration.between(older.startTime, newer.startTime)
+        if (gap >= Duration.ofMinutes(1)) put(newer.id, gap)
+    }
 }
 
 /**
