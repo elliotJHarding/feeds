@@ -228,19 +228,35 @@ class HistoryTimelineTest {
         assertEquals(null, awakeBeforeNap(days)[later.id])
     }
 
+    /**
+     * The real 12-13 Sep pair: last nap ends 21:25, next starts 09:55. 12h 31m, nearly all of it
+     * night sleep, which naps do not record. Printing "12h 31m awake" would be false, so the
+     * day's first nap gets nothing. The feed interval deliberately does cross midnight - the two
+     * measures differ here.
+     */
     @Test
-    fun `the awake stretch crosses the day boundary`() {
-        val lastNight = LocalDate.of(2026, 7, 22).atTime(20, 0).atZone(zone).toInstant()
-        val morning = nap(at(2), at(4))
+    fun `the awake stretch stops at midnight`() {
+        val lastNight = LocalDate.of(2026, 7, 22).atTime(20, 30).atZone(zone).toInstant()
+        val morning = nap(at(9, 55), at(10, 40))
 
         val days = buildDayHistory(
             feeds = emptyList(),
-            naps = listOf(morning, nap(lastNight, lastNight.plusSeconds(3600))),
+            naps = listOf(morning, nap(lastNight, lastNight.plus(Duration.ofMinutes(55)))),
             zone = zone,
         )
 
-        // 21:00 to 02:00.
-        assertEquals(Duration.ofHours(5), awakeBeforeNap(days)[morning.id])
+        assertEquals(null, awakeBeforeNap(days)[morning.id])
+    }
+
+    /** The same day's later naps still measure, so the daytime rhythm stays visible. */
+    @Test
+    fun `naps within one day still measure the stretch between them`() {
+        val first = nap(at(9, 30), at(10, 15))
+        val second = nap(at(11, 15), at(13, 15))
+
+        val days = buildDayHistory(feeds = emptyList(), naps = listOf(second, first), zone = zone)
+
+        assertEquals(Duration.ofHours(1), awakeBeforeNap(days)[second.id])
     }
 
     // The filter

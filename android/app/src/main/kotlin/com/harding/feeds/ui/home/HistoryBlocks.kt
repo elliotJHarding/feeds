@@ -236,15 +236,25 @@ private fun layOut(
     return DayLayout(
         sessionBars = sessionBars,
         napBars = napBars,
-        // Keyed on the session's oldest feed, the same lookup the compact list uses.
-        feedGaps = gapMarks(sessionBars, spine = true, { intervals.beforeFeed[it.feeds.last().id] }) {
-            formatHoursMinutes(it)
-        },
-        // No spine: the band edges already bound the stretch, and "awake" names the measure, which
-        // is a different one from the feed interval on the other rail.
-        napGaps = gapMarks(napBars, spine = false, { intervals.awakeBeforeNap[it.id] }) {
-            "${formatHoursMinutes(it)} awake"
-        },
+        // Keyed on the session's oldest feed, the same lookup the compact list uses. The day's
+        // first session keeps its mark: that is the overnight interval, and the night is where
+        // the signal is. Its space is only the part after midnight, which is why it draws no
+        // spine - the value is the whole interval, not the height of the space.
+        feedGaps = gapMarks(
+            bars = sessionBars,
+            spine = true,
+            interval = { intervals.beforeFeed[it.feeds.last().id] },
+            label = ::formatHoursMinutes,
+        ),
+        // The day's first nap gets nothing, because awakeBeforeNap stops at midnight - see the
+        // note there. No spine either: the band edges already bound the stretch, and the word
+        // names a measure different from the feed interval on the other rail.
+        napGaps = gapMarks(
+            bars = napBars,
+            spine = false,
+            interval = { intervals.awakeBeforeNap[it.id] },
+            label = { "${formatHoursMinutes(it)} awake" },
+        ),
         items = items,
     )
 }
